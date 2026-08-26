@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.production
+.data/
+.local/
+data/
+workspaces/
+codex-home/
+coverage/
+*.log
+*.tsbuildinfo
+.DS_Store
+deploy/volcengine/.terraform/
+deploy/volcengine/*.tfstate*
+deploy/volcengine/terraform.tfvars

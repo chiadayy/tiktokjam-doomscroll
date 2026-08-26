@@ -1,0 +1,13 @@
+region           = "cn-beijing"
+zone_id          = "cn-beijing-a"
+image_id         = "image-replace-with-ubuntu-image-id"
+instance_type    = "ecs.g4i.large"
+key_pair_name    = "replace-with-existing-key-pair"
+project_name     = "default"
+allowed_web_cidr = "203.0.113.0/24"
+allowed_ssh_cidr = "203.0.113.10/32"
+
+# Push this generated repository to a public Git remote before using the
+# full Terraform + cloud-init path.
+repository_url = "https://github.com/your-org/volc-agent-launchpad.git"
+repository_ref = "main"

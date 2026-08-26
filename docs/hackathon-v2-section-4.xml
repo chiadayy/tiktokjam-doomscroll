@@ -1,0 +1,19 @@
+<h3>Common Functional Requirements</h3>
+<ul>
+  <li>Keep the provided Create Agent, lifecycle, and Playground journey working.</li>
+  <li>Integrate middleware into a real backend/runtime path. Static screens do not count.</li>
+  <li>Demonstrate one positive case and one negative, failure, or denial case.</li>
+  <li>Use the one-line local Runtime and Ark from the Starter Kit. ECS is optional; Track C may additionally use veFaaS Cloud Sandbox.</li>
+  <li>Do not expose API Keys, AK/SK, passwords, or unredacted secrets in the browser, repository, logs, or demo.</li>
+  <li>Include automated evidence for the core middleware decision or event.</li>
+</ul>
+<h3>Required Three-Minute Demo Flow</h3>
+<ol>
+  <li seq="auto">Show the selected track and the protected/observed system boundary.</li>
+  <li seq="auto">Create or select an Agent in the provided Web UI.</li>
+  <li seq="auto">Run a normal coding task and show the expected result.</li>
+  <li seq="auto">Trigger the track-specific failure, denial, or malicious case.</li>
+  <li seq="auto">Show the middleware evidence: trace, policy decision, or isolation/termination result.</li>
+  <li seq="auto">State one limitation and one next step.</li>
+</ol>
+<p>The demo may use mock user data or a mock protected database. The Agent interaction, middleware decision, and evidence must be functional.</p>

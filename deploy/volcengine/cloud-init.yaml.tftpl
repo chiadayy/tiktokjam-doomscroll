@@ -1,0 +1,23 @@
+#cloud-config
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+
+write_files:
+  - path: /opt/agent-launchpad.env
+    permissions: "0600"
+    encoding: b64
+    content: ${runtime_env_b64}
+
+runcmd:
+  - curl -fsSL https://get.docker.com -o /opt/get-docker.sh
+  - sh /opt/get-docker.sh
+  - systemctl enable --now docker
+  - mkdir -p /opt/agent-launchpad
+  - git clone --depth 1 --branch '${repository_ref}' '${repository_url}' /opt/agent-launchpad/app
+  - cp /opt/agent-launchpad.env /opt/agent-launchpad/app/.env.production
+  - mkdir -p /opt/agent-launchpad/app/data /opt/agent-launchpad/app/workspaces /opt/agent-launchpad/app/codex-home
+  - chown -R 1000:1000 /opt/agent-launchpad/app/data /opt/agent-launchpad/app/workspaces /opt/agent-launchpad/app/codex-home
+  - cd /opt/agent-launchpad/app && ./scripts/deploy-existing-ecs.sh .env.production

@@ -1,0 +1,15 @@
+<h3>Out of Scope</h3>
+<ul>
+  <li>Rebuilding the supplied React UI, Node.js control plane, local Runtime, ECS automation, or Codex/Ark connection.</li>
+  <li>Training or fine-tuning a foundation model.</li>
+  <li>Building a general workflow editor, marketplace, multi-region control plane, or production billing system.</li>
+  <li>Building a container scheduler, microVM runtime, or secure file-transfer protocol from scratch.</li>
+  <li>Completing more than one middleware track.</li>
+</ul>
+<h3>FAQ</h3>
+<p><b>Can we use a different frontend framework?</b><br/>Only if it directly enables your selected middleware. Framework migration is not judged and is likely a poor use of the three days.</p>
+<p><b>Can we use mock users or data?</b><br/>Yes. Track B should prefer a small, deterministic mock resource over a complex third-party integration.</p>
+<p><b>Must Track C use veFaaS Cloud Sandbox?</b><br/>No. Teams may harden the supplied local container Runtime or use veFaaS. The new boundary and threat-specific controls must be real and clearly demonstrated; merely showing the Starter Kit's default limits is insufficient.</p>
+<p><b>Can Track A show Codex logs?</b><br/>Logs may be an input, but the result must correlate a Run into structured steps and make the failure diagnosable.</p>
+<p><b>Can we add features from another track?</b><br/>You may, but they do not compensate for an incomplete selected track. Keep the demo and architecture focused.</p>
+<p><b>Must the final demo run on ECS?</b><br/>No. The default development and judging path is the local Docker/Colima/Podman POC. Use ECS only when it materially supports the selected middleware design.</p>

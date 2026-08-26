@@ -1,0 +1,12 @@
+<p>Organizers should complete these checks before distributing the challenge:</p>
+<checkbox done="false">Publish the Starter Kit repository and pin the tested commit/tag.</checkbox>
+<checkbox done="false">Run the one-line local README path from clean macOS and Linux environments using at least two supported engines.</checkbox>
+<checkbox done="false">Prepare a working Ark endpoint and limited API Key for each team or publish a credential process.</checkbox>
+<checkbox done="false">If ECS is offered, confirm image inventory, Region/Zone, security-group rules, quotas, and activity budget.</checkbox>
+<checkbox done="false">Pre-create or document veFaaS Cloud Sandbox access for Track C teams.</checkbox>
+<checkbox done="false">Provide the two-user mock dataset/resource contract for Track B, or allow teams to use the repository example.</checkbox>
+<checkbox done="false">Provide one known successful prompt and one known failing/malicious prompt for rehearsal.</checkbox>
+<checkbox done="false">Brief judges on track-specific success tests and the 40/25/20/15 rubric.</checkbox>
+<callout emoji="⭐" background-color="light-purple" border-color="purple">
+  <p><b>Final organizer test:</b> a student who has not seen the repository should reach the local working Playground in under 15 minutes without any cloud infrastructure credentials. If not, fix the Starter Kit before the clock starts.</p>
+</callout>

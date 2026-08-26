@@ -1,0 +1,12 @@
+<table>
+  <colgroup><col width="90"/><col width="260"/><col width="270"/></colgroup>
+  <thead><tr><th background-color="light-gray"><p>Day</p></th><th background-color="light-gray"><p>Engineering Goal</p></th><th background-color="light-gray"><p>Exit Check</p></th></tr></thead>
+  <tbody>
+    <tr><td><p><b>Day 1</b></p></td><td><p>Start the local POC with one command, select one user/threat story, draw the boundary, define the smallest middleware data contract, and complete the backend happy path.</p></td><td><p>A real local Agent Run reaches your new middleware code and produces one inspectable decision/event.</p></td></tr>
+    <tr><td><p><b>Day 2</b></p></td><td><p>Finish enforcement or instrumentation, add the minimum UI, and implement the negative/failure scenario.</p></td><td><p>Positive and negative cases both work without manually editing data during the demo.</p></td></tr>
+    <tr><td><p><b>Day 3</b></p></td><td><p>Add tests, harden errors and cleanup, verify deployment, finish the one-page architecture, and rehearse the three-minute demo.</p></td><td><p>A teammate can deploy from the README and deliver the demo within three minutes.</p></td></tr>
+  </tbody>
+</table>
+<callout emoji="💡" background-color="light-blue" border-color="blue">
+  <p>If your team is still changing frameworks or cloud topology late on Day 1, return to the Starter Kit baseline and narrow the middleware story.</p>
+</callout>

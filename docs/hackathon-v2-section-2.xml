@@ -1,0 +1,30 @@
+<p>The organizers distribute the Starter Kit before Day 1. With Node.js plus Docker, Colima, or Podman installed, teams provide the prepared Ark Key and endpoint ID and start the complete local Playground with one command. No team needs ECS, AK/SK, VPC, TOS, or Terraform for normal development.</p>
+<table>
+  <colgroup><col width="130"/><col width="250"/><col width="230"/></colgroup>
+  <thead><tr><th background-color="light-gray"><p>Provided Component</p></th><th background-color="light-gray"><p>What Already Works</p></th><th background-color="light-gray"><p>Extension Seam</p></th></tr></thead>
+  <tbody>
+    <tr><td><p><b>Web UI</b></p></td><td><p>Create, edit, start, stop, delete, and chat with an Agent.</p></td><td><p>Add only the UI needed by your chosen track.</p></td></tr>
+    <tr><td><p><b>Control Plane</b></p></td><td><p>Validated REST APIs, lifecycle state, async Runs, messages, and error handling.</p></td><td><p>Route guards, event emission, policy decisions, or sandbox adapter.</p></td></tr>
+    <tr><td><p><b>Agent Runtime</b></p></td><td><p>Codex CLI executes each turn in a disposable local Docker/Colima/Podman container while workspace and session data persist.</p></td><td><p>Instrument, authorize, harden, wrap, or replace the Runner.</p></td></tr>
+    <tr><td><p><b>Optional Cloud</b></p></td><td><p>Docker plus Terraform for Volcengine VPC, Security Group, ECS, EIP, and cloud-init.</p></td><td><p>Use ECS only when useful to the chosen track; it is not required for judging.</p></td></tr>
+    <tr><td><p><b>Model</b></p></td><td><p>Codex uses a Volcengine Ark endpoint through the Responses API.</p></td><td><p>Do not replace or train the foundation model.</p></td></tr>
+  </tbody>
+</table>
+<h3>Where Your Middleware Fits</h3>
+<whiteboard type="mermaid">mindmap
+  root((Working Starter Kit))
+    Glass Box
+      Run and Span events
+      Failure diagnosis
+      Usage and redaction
+    Bouncer
+      Human and Agent identity
+      Resource policy
+      Access Denied
+    Kill Switch
+      Isolated execution
+      Threat detection
+      Termination and cleanup</whiteboard>
+<callout emoji="❗" background-color="light-yellow" border-color="yellow">
+  <p><b>The baseline is not the competition.</b> Styling the form, changing frameworks, rebuilding the supplied local container path, or reprovisioning the same ECS does not count as middleware progress.</p>
+</callout>

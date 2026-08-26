@@ -1,0 +1,16 @@
+<h3>General</h3>
+<checkbox done="false">The repository names exactly one selected track.</checkbox>
+<checkbox done="false">A reviewer can create/select an Agent and run a task from the browser.</checkbox>
+<checkbox done="false">The selected middleware executes in a real backend/runtime path.</checkbox>
+<checkbox done="false">The demo includes both a positive case and a failure, denial, or malicious case.</checkbox>
+<checkbox done="false">No secret appears in source, browser state, screenshots, logs, traces, or demo output.</checkbox>
+<checkbox done="false">The README contains deployment steps and known limitations.</checkbox>
+<h3>Track-Specific Gate</h3>
+<ul>
+  <li><b>Glass Box:</b> a correlated trace identifies a failing step and reports available model usage.</li>
+  <li><b>Bouncer:</b> cross-user access is denied by the backend and the decision identifies human, Agent, action, and resource.</li>
+  <li><b>Kill Switch:</b> a malicious action is contained, the protected asset survives, and execution cleanup is visible.</li>
+</ul>
+<callout emoji="❌" background-color="light-red" border-color="red">
+  <p>A static mock, verbal-only design, or middleware check implemented only in the browser does not pass acceptance.</p>
+</callout>

@@ -1,0 +1,23 @@
+<p>Autonomous coding Agents can reason, call tools, execute commands, and change files. A basic Agent can be created quickly, but operating it responsibly requires infrastructure around the model. This challenge asks you to build one focused piece of that infrastructure.</p>
+<blockquote>The Starter Kit works, but it is insecure, hard to diagnose, and only weakly isolated. Choose one middleware problem and make that layer demonstrably better.</blockquote>
+<table>
+  <colgroup><col width="130"/><col width="360"/></colgroup>
+  <thead><tr><th background-color="light-gray"><p>Dimension</p></th><th background-color="light-gray"><p>Challenge Definition</p></th></tr></thead>
+  <tbody>
+    <tr><td><p><b>Target students</b></p></td><td><p>Second- and third-year undergraduates with basic Web/backend experience.</p></td></tr>
+    <tr><td><p><b>Build time</b></p></td><td><p>Three days. Team size follows the event-wide rules.</p></td></tr>
+    <tr><td><p><b>Starting point</b></p></td><td><p>A functional browser UI, Node.js control plane, Agent CRUD, Playground, one-line local Codex Runtime, Ark model connection, and optional ECS deployment.</p></td></tr>
+    <tr><td><p><b>Your work</b></p></td><td><p>Implement Trace and Audit, Identity and Authorization, <b>or</b> Safety and Sandboxing.</p></td></tr>
+    <tr><td><p><b>Definition of success</b></p></td><td><p>A three-minute live demo proves the selected middleware changes a real Agent run.</p></td></tr>
+  </tbody>
+</table>
+<h3>Learning Objectives</h3>
+<ul>
+  <li>Identify a trust, visibility, or isolation boundary in an Agent system.</li>
+  <li>Design a small middleware contract and integrate it end to end.</li>
+  <li>Demonstrate both a normal case and a meaningful failure or denial case.</li>
+  <li>Explain trade-offs and known limitations without pretending the POC is production-ready.</li>
+</ul>
+<callout emoji="✅" background-color="light-green" border-color="green">
+  <p><b>Important:</b> a narrow feature that works end to end scores higher than three incomplete middleware ideas.</p>
+</callout>

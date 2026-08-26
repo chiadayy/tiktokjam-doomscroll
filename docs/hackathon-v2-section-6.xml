@@ -1,0 +1,19 @@
+<h3>Required Deliverables — Only Three</h3>
+<ol>
+  <li seq="auto"><b>Live Demo (3 minutes):</b> show the Agent working and the selected middleware succeeding in its required failure/denial case.</li>
+  <li seq="auto"><b>Architecture Diagram (1 page):</b> show the middleware boundary, main components, data/decision flow, and trust or failure boundary.</li>
+  <li seq="auto"><b>Code Repository:</b> runnable source, setup instructions, selected track, tests/evidence, and known limitations.</li>
+</ol>
+<p>No long report, pitch deck, product video, or multi-page threat model is required.</p>
+<h3>Evaluation</h3>
+<table>
+  <colgroup><col width="230"/><col width="80"/><col width="320"/></colgroup>
+  <thead><tr><th background-color="light-gray"><p>Category</p></th><th background-color="light-gray"><p>Weight</p></th><th background-color="light-gray"><p>What Judges Look For</p></th></tr></thead>
+  <tbody>
+    <tr><td><p><b>Middleware Works End to End</b></p></td><td><p><b>40%</b></p></td><td><p>The selected track changes a real Agent Run and passes its stated success test.</p></td></tr>
+    <tr><td><p><b>Technical Design and Integration</b></p></td><td><p><b>25%</b></p></td><td><p>A clear boundary, sensible data/policy model, correct backend enforcement, and focused use of cloud capabilities.</p></td></tr>
+    <tr><td><p><b>Verification and Robustness</b></p></td><td><p><b>20%</b></p></td><td><p>Positive and negative evidence, useful errors, secret handling, cleanup, and tests proportional to the POC.</p></td></tr>
+    <tr><td><p><b>Demo and Reproducibility</b></p></td><td><p><b>15%</b></p></td><td><p>A clear three-minute story, one-page architecture, and README another team can follow.</p></td></tr>
+  </tbody>
+</table>
+<p>The provided frontend, base CRUD, local Runtime, and optional ECS provisioning are prerequisites, not innovation points. Visual polish is considered only when it helps explain the selected middleware.</p>

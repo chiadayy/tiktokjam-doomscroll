@@ -1,0 +1,35 @@
+services:
+  launchpad:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${CONTAINER_RUNTIME_BASE_IMAGE:-node:22-bookworm-slim}
+        DEBIAN_MIRROR: ${CONTAINER_APT_MIRROR:-}
+        DEBIAN_SECURITY_MIRROR: ${CONTAINER_APT_SECURITY_MIRROR:-}
+    image: volc-agent-launchpad:local
+    restart: unless-stopped
+    env_file:
+      - ${LAUNCHPAD_ENV_FILE:-.env}
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      APP_DATA_DIR: /app/data
+      AGENT_WORKSPACE_ROOT: /app/workspaces
+      CODEX_HOME: /app/codex-home
+      CODEX_SANDBOX_MODE: ${CODEX_SANDBOX_MODE:-workspace-write}
+    ports:
+      - "${PUBLIC_PORT:-3000}:3000"
+    volumes:
+      - ./data:/app/data
+      - ./workspaces:/app/workspaces
+      - ./codex-home:/app/codex-home
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
+    mem_limit: 4g
+    cpus: 2

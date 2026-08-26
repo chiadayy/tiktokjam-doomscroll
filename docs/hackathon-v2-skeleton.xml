@@ -1,0 +1,15 @@
+<title>CodeJam Track #5 v2 — Agent Middleware Challenge (3-Day Undergraduate Edition)</title>
+<h1>Agent Launchpad: Make a Working Agent Platform Production-Shaped</h1>
+<callout emoji="📌" background-color="light-blue" border-color="blue">
+  <p><b>Audience:</b> second- and third-year undergraduates · <b>Duration:</b> 3 days · <b>Rule:</b> choose exactly one middleware track.</p>
+  <p>The organizers provide a one-line local Docker/Colima/Podman + Codex CLI + Ark Starter Kit, with optional Volcengine ECS deployment. Your team improves one middleware layer instead of rebuilding the platform.</p>
+</callout>
+<h2>1. Challenge at a Glance</h2>
+<h2>2. Starter Kit Baseline and Architecture</h2>
+<h2>3. Choose Exactly One Middleware Track</h2>
+<h2>4. Common Requirements and Demo Scenario</h2>
+<h2>5. Suggested Three-Day Plan</h2>
+<h2>6. Deliverables and Evaluation</h2>
+<h2>7. Acceptance Checklist</h2>
+<h2>8. Scope Rules and FAQ</h2>
+<h2>9. Organizer Readiness Checklist</h2>

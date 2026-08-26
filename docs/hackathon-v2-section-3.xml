@@ -1,0 +1,49 @@
+<p>Declare one track in your README and opening demo slide. Features from other tracks may be mentioned as future work, but they are not required and do not earn extra points if the selected track is incomplete.</p>
+<h3>Track A — The Glass Box (Trace and Audit)</h3>
+<p><b>Mission:</b> make an Agent run understandable. A reviewer should see what happened, where it failed, and how much model usage it consumed.</p>
+<p><b>Minimum implementation:</b></p>
+<ul>
+  <li>Define stable Agent ID, Run ID, Trace ID, and Span ID fields.</li>
+  <li>Capture at least three meaningful step types, such as orchestration, model call, command execution, or file change.</li>
+  <li>Show a visual timeline or tree in the browser.</li>
+  <li>Record status, duration, error detail, and available token usage.</li>
+  <li>Redact configured secrets before they reach stored events or the UI.</li>
+</ul>
+<p><b>Required demo:</b> run one successful task, then run a task that fails. Open the trace and identify the failing step and its useful diagnostic context.</p>
+<callout emoji="🏁" background-color="light-green" border-color="green">
+  <p><b>Success test:</b> the judge can answer “Why did this Agent fail?” within 30 seconds using your UI.</p>
+</callout>
+<p><b>Good stretch ideas:</b> filtering, trace export, cost estimation, retry linkage, or a comparison between two Runs. A generic log page without correlation is not sufficient.</p>
+
+<h3>Track B — The Bouncer (Identity and Authorization)</h3>
+<p><b>Mission:</b> distinguish a human user from the Agent acting for that user, then enforce resource ownership outside the UI.</p>
+<p><b>Minimum implementation:</b></p>
+<ul>
+  <li>Provide two mock or real human users: User A and User B.</li>
+  <li>Give each Agent a distinct non-human principal linked to its owner.</li>
+  <li>Protect a mock database, file collection, or tool resource with server-side policy checks.</li>
+  <li>Record the initiating human, executing Agent, requested action, target resource, and allow/deny decision.</li>
+  <li>Support one revocation, disable, or permission-update action.</li>
+</ul>
+<p><b>Required demo:</b> User A creates an Agent. The Agent reads User A's permitted mock data successfully, then attempts to read User B's data and receives a real Access Denied response from the backend.</p>
+<callout emoji="🏁" background-color="light-green" border-color="green">
+  <p><b>Success test:</b> changing a user ID in the browser request cannot bypass the authorization decision.</p>
+</callout>
+<p><b>Good stretch ideas:</b> time-bound delegation, policy explanation, approval for one sensitive action, or credential rotation. A login screen alone is not sufficient.</p>
+
+<h3>Track C — The Kill Switch (Safety and Sandboxing)</h3>
+<p><b>Mission:</b> contain a dangerous Agent action and make the block or termination visible to the user.</p>
+<p><b>Minimum implementation:</b></p>
+<ul>
+  <li>Define one explicit threat scenario and the asset being protected.</li>
+  <li>Harden the supplied local Runtime with an explicit isolation/policy adapter, or replace it with veFaaS Cloud Sandbox.</li>
+  <li>Enforce at least two bounded controls, such as timeout, filesystem scope, process/resource limit, or network destination rule.</li>
+  <li>Expose blocked, terminated, and cleaned-up states in the control plane or UI.</li>
+  <li>Prove that a later safe Run can proceed after the malicious Run is contained.</li>
+</ul>
+<p><b>Required demo:</b> submit a malicious request such as reading a protected host file, accessing a forbidden endpoint, or deleting a protected mock database. Show the infrastructure blocking or isolating it and cleaning up the execution.</p>
+<callout emoji="🏁" background-color="light-green" border-color="green">
+  <p><b>Success test:</b> the protected asset remains unchanged and the judge can see which control stopped the action.</p>
+</callout>
+<p><b>Good stretch ideas:</b> policy presets, risk preview, one-click emergency stop, or sandbox evidence. A keyword-only prompt filter is not sufficient.</p>
+<p>The Starter Kit's default CPU, memory, PID, capability, and workspace limits are baseline behavior. Track C must add and demonstrate a new threat-specific control or stronger isolation boundary.</p>
