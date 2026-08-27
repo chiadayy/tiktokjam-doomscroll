@@ -4,6 +4,25 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_dir"
 
+# Pull only the Ark/auth vars out of .env, not the whole file. Local paths
+# (APP_DATA_DIR, AGENT_WORKSPACE_ROOT, CODEX_HOME, CONTAINER_*) are left to
+# this script's own defaults below; .env's copies are meant for the Docker
+# deployment path and would break local host mounts if sourced wholesale.
+load_env_var() {
+  local name="$1"
+  if [[ -z "${!name:-}" && -f "$repo_dir/.env" ]]; then
+    local value
+    value="$(grep -m1 "^${name}=" "$repo_dir/.env" | cut -d= -f2-)"
+    if [[ -n "$value" ]]; then
+      export "$name=$value"
+    fi
+  fi
+}
+load_env_var ARK_API_KEY
+load_env_var ARK_MODEL
+load_env_var ARK_BASE_URL
+load_env_var APP_AUTH_TOKEN
+
 runtime_image="${CONTAINER_RUNTIME_IMAGE:-volc-agent-runtime:local}"
 runtime_base_image="${CONTAINER_RUNTIME_BASE_IMAGE:-node:22-bookworm-slim}"
 runtime_apt_mirror="${CONTAINER_APT_MIRROR:-}"
