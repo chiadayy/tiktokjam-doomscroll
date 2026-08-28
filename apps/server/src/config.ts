@@ -62,6 +62,29 @@ const envSchema = z.object({
   ARK_PROXY_PORT: z.coerce.number().int().min(0).max(65535).default(8788),
   /** How the Runtime container reaches the host running this proxy. */
   ARK_PROXY_HOST: z.string().min(1).default("host.docker.internal"),
+  /**
+   * Run the guard checks against every turn. Off by default: with no checks
+   * the agent runs exactly as it would unobserved. Only the container runtime
+   * is traced, so this has no effect on the local-process runner.
+   */
+  GUARDRAIL_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  /**
+   * Overrides the sensitive-egress marker list entirely when set.
+   * Comma-separated path substrings, e.g. ".env,id_rsa,secrets".
+   */
+  GUARDRAIL_SENSITIVE_MARKERS: z.string().default(""),
+  /**
+   * The sandbox mode a guarded turn runs in, regardless of CODEX_SANDBOX_MODE.
+   * "workspace-write" keeps network denial and approval escalation meaningful,
+   * which is what lets the guard refuse an outbound command before it runs.
+   * Drop to "danger-full-access" only if the runtime cannot honour it.
+   */
+  GUARDRAIL_SANDBOX: z
+    .enum(["read-only", "workspace-write", "danger-full-access"])
+    .default("workspace-write"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
@@ -121,6 +144,11 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     arkProxyPort: env.ARK_PROXY_PORT,
     arkProxyHost:
       env.RUNTIME_PROVIDER === "container" ? env.ARK_PROXY_HOST : "127.0.0.1",
+    guardrailEnabled: env.GUARDRAIL_ENABLED,
+    guardrailSensitiveMarkers: env.GUARDRAIL_SENSITIVE_MARKERS.split(",")
+      .map((value) => value.trim())
+      .filter((value) => value !== ""),
+    guardrailSandbox: env.GUARDRAIL_SANDBOX,
     nodeEnv: env.NODE_ENV,
   };
 }

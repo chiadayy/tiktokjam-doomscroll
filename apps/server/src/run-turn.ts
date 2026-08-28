@@ -1,16 +1,19 @@
 // Drives one turn of an agent and records everything it does.
 //
-// This file deliberately does NOT decide anything. Every permission request is
-// accepted, no action is refused, no correction is sent. The agent runs exactly
-// as it would if nobody were watching, and the full raw exchange is written to
-// the run's trace file.
+// With no `checks` passed it decides nothing: every permission request is
+// accepted, no action is refused, no correction is sent, and the agent runs
+// exactly as it would if nobody were watching. That is still the default.
 //
-// The ability to refuse or redirect is already wired up and proven: the runtime
-// pauses for permission and accepts new instructions mid turn. We are choosing
-// not to use it yet, so that the traces we collect show unimpeded behaviour.
-// Enforcement belongs on top of this, driven by the checks in checks.ts.
+// When `checks` are passed it becomes the enforcement point. After each
+// recorded action the checks run over the trace so far; a `violation` with a
+// `steer` string is sent into the live turn as a correction, and a `violation`
+// on a command still waiting for permission is refused outright with `cancel`
+// (an atomic decline-and-interrupt). The checks are the deciders — this file
+// only carries their verdict onto the wire.
 
 import type { JsonRpcConnection } from "./codex-app-server-client.js";
+import { runChecks, type Check, type Finding } from "./checks.js";
+import type { TraceRecord } from "./trace.js";
 import type { RunUsage } from "./types.js";
 
 export interface TurnOptions {
@@ -20,33 +23,156 @@ export interface TurnOptions {
   threadId: string | null;
   /** Mirrors CODEX_SANDBOX_MODE. */
   sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
+  /**
+   * Checks to run as the trace grows. Empty (the default) means observe
+   * without intervening.
+   */
+  checks?: Check[];
+  /**
+   * The run's trace, the same array the caller appends to as messages arrive.
+   * Checks read it. Required for `checks` to see anything.
+   */
+  trace?: TraceRecord[];
+  /**
+   * Deny network access in the sandbox so a command that reaches out escalates
+   * to a permission request this turn can inspect. Pair it with `checks`.
+   */
+  denyNetwork?: boolean;
+  /**
+   * What to do when a check returns a `violation` on an action that is already
+   * running (seen at `item/started` or later):
+   *   "interrupt"  end the turn at once with `turn/interrupt`. The default.
+   *   "steer-only" inject the correction text and let the turn continue.
+   * A command still waiting on approval is always refused with `decline`
+   * regardless of this, since that needs no interrupt.
+   */
+  onViolation?: "interrupt" | "steer-only";
 }
 
 export interface TurnOutcome {
   output: string;
   threadId: string | null;
   usage: RunUsage | null;
+  /** Everything the checks reported, in the order it was found. */
+  findings: Finding[];
+  /** True if a check refused an action or ended the turn during this run. */
+  intervened: boolean;
 }
 
 export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   const rpc = options.rpc;
+  const checks = options.checks ?? [];
+  const records = options.trace ?? [];
+  const onViolation = options.onViolation ?? "interrupt";
 
   // Collected as notifications arrive.
   const messages: string[] = [];
   let usage: RunUsage | null = null;
   let turnFailure: string | null = null;
 
-  // Accept every permission request, immediately. The runtime blocks until we
-  // answer, so not answering would change the agent's behaviour, which is the
-  // one thing this file must not do.
-  function acceptApproval(_params: Record<string, unknown>, id: number | string): void {
-    rpc.reply(id, { decision: "accept" });
+  // Findings the checks have produced, and the keys of ones already acted on.
+  const findings: Finding[] = [];
+  const actedOn = new Set<string>();
+  let intervened = false;
+  let interruptSent = false;
+  let liveThreadId: string | null = options.threadId;
+  let turnId: string | null = null;
+
+  // A violation fires once per turn (coarser key); anything lower is per record.
+  const keyOf = (finding: Finding): string =>
+    finding.severity === "violation"
+      ? `${finding.check}:${finding.code}`
+      : `${finding.check}:${finding.code}:${finding.seq}`;
+
+  /**
+   * Run the checks over `trace` and act on anything new.
+   *
+   * @param enforce when true, a violation triggers the configured response
+   *   (interrupt or steer). The approval handler passes false because it
+   *   answers with `decline` itself, which needs no interrupt.
+   */
+  function review(trace: TraceRecord[], enforce: boolean): Finding[] {
+    if (checks.length === 0) return [];
+    const found = runChecks(checks, trace);
+    for (const finding of found) {
+      const key = keyOf(finding);
+      if (actedOn.has(key)) continue;
+      actedOn.add(key);
+      findings.push(finding);
+      if (finding.severity !== "violation") continue;
+      intervened = true;
+      if (!enforce) continue;
+      if (onViolation === "interrupt") {
+        sendInterrupt();
+      } else if (finding.steer !== undefined) {
+        sendSteer(finding.steer);
+      }
+    }
+    return found;
   }
 
-  rpc.onRequest("item/commandExecution/requestApproval", acceptApproval);
-  rpc.onRequest("item/fileChange/requestApproval", acceptApproval);
+  function sendSteer(text: string): void {
+    if (liveThreadId === null || turnId === null) return;
+    void rpc
+      .request("turn/steer", {
+        threadId: liveThreadId,
+        input: [{ type: "text", text }],
+        expectedTurnId: turnId,
+      })
+      .catch(() => {
+        // A turn that finished before the correction landed is not worth
+        // failing the run over.
+      });
+  }
+
+  /** End the turn now. Codex kills the running command and emits turn/completed. */
+  function sendInterrupt(): void {
+    if (interruptSent || liveThreadId === null || turnId === null) return;
+    interruptSent = true;
+    void rpc
+      .request("turn/interrupt", { threadId: liveThreadId, turnId: turnId })
+      .catch(() => {
+        // Already ending: nothing to do.
+      });
+  }
+
+  /**
+   * Answer a permission request. With no checks this is the old behaviour:
+   * accept everything. With checks, a pending command that trips a violation is
+   * refused with `decline`, which drops that one action and lets the agent
+   * carry on with the rest of the task (see codex-protocol.ts).
+   */
+  function decideApproval(params: Record<string, unknown>, id: number | string): void {
+    if (checks.length === 0) {
+      rpc.reply(id, { decision: "accept" });
+      return;
+    }
+    const pending = pendingCommandRecord(params, records);
+    const trace = pending === null ? records : [...records, pending];
+    const violation = review(trace, false).find(
+      (finding) => finding.severity === "violation",
+    );
+    if (violation === undefined) {
+      rpc.reply(id, { decision: "accept" });
+      return;
+    }
+    intervened = true;
+    rpc.reply(id, { decision: "decline" });
+  }
+
+  rpc.onRequest("item/commandExecution/requestApproval", decideApproval);
+  rpc.onRequest("item/fileChange/requestApproval", decideApproval);
+
+  // Review the moment a command is announced, before it has finished, so an
+  // interrupt has a chance to land before the command completes.
+  rpc.on("item/started", function reviewOnStart() {
+    review(records, true);
+  });
 
   rpc.on("item/completed", function collectAgentMessage(params) {
+    // Backstop: catch anything only visible once the action completed.
+    review(records, true);
+
     const item = params.item as Record<string, unknown> | undefined;
     if (item === undefined) return;
     if (item.type !== "agentMessage") return;
@@ -78,12 +204,15 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   rpc.notify("initialized", {});
 
   const threadId = await openThread(rpc, options);
+  liveThreadId = threadId;
 
-  await rpc.request("turn/start", {
+  const startedTurn = (await rpc.request("turn/start", {
     threadId: threadId,
     input: [{ type: "text", text: options.prompt }],
-    sandboxPolicy: buildSandboxPolicy(options.sandboxMode),
-  });
+    sandboxPolicy: buildSandboxPolicy(options.sandboxMode, options.denyNetwork ?? false),
+  })) as { turn?: { id?: string } };
+  // turn/steer refuses to act on anything but the currently live turn.
+  turnId = startedTurn?.turn?.id ?? null;
 
   const finalTurn = await turnFinished;
 
@@ -91,16 +220,72 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   if (failureFromTurn !== null) {
     turnFailure = failureFromTurn;
   }
-  if (turnFailure !== null) {
+  // An interrupt we sent ends the turn with an error too. That is the guard
+  // working, not a failure, so report the findings instead of throwing.
+  if (turnFailure !== null && !interruptSent) {
     throw new Error("Codex turn failed: " + turnFailure);
   }
 
   const lastMessage = messages.at(-1);
+  const output =
+    lastMessage !== undefined
+      ? lastMessage.trim()
+      : interruptSent
+        ? "Run stopped by the guard before completion."
+        : "";
   return {
-    output: lastMessage === undefined ? "" : lastMessage.trim(),
+    output: output,
     threadId: threadId,
     usage: usage,
+    findings: findings,
+    intervened: intervened,
   };
+}
+
+/**
+ * A trace record for a command still waiting on approval, so the checks can
+ * judge it before it runs. Returns null when the command is already in the
+ * trace (its own `item/started` arrived first), so we do not double-count it.
+ */
+function pendingCommandRecord(
+  params: Record<string, unknown>,
+  records: TraceRecord[],
+): TraceRecord | null {
+  const itemId = typeof params.itemId === "string" ? params.itemId : null;
+  const command = typeof params.command === "string" ? params.command : null;
+  if (command === null) return null;
+  if (
+    itemId !== null &&
+    records.some((record) => readItemId(record) === itemId)
+  ) {
+    return null;
+  }
+  return {
+    seq: records.length + 1,
+    at: new Date().toISOString(),
+    dir: "in",
+    method: "item/started",
+    payload: {
+      params: {
+        item: {
+          id: itemId ?? "",
+          type: "commandExecution",
+          command: command,
+          cwd: typeof params.cwd === "string" ? params.cwd : null,
+          commandActions: Array.isArray(params.commandActions)
+            ? params.commandActions
+            : [],
+        },
+      },
+    },
+  };
+}
+
+function readItemId(record: TraceRecord): string | null {
+  const payload = record.payload as Record<string, unknown> | null;
+  const inner = payload?.params as Record<string, unknown> | undefined;
+  const item = inner?.item as Record<string, unknown> | undefined;
+  return typeof item?.id === "string" ? item.id : null;
 }
 
 /**
@@ -128,7 +313,15 @@ async function openThread(rpc: JsonRpcConnection, options: TurnOptions): Promise
   return options.threadId;
 }
 
-function buildSandboxPolicy(mode: TurnOptions["sandboxMode"]): Record<string, unknown> {
+/**
+ * @param denyNetwork when true, drop network access from the policy so any
+ * command that needs the network escalates to a permission request the caller
+ * can inspect. `danger-full-access` cannot express this and is left as is.
+ */
+function buildSandboxPolicy(
+  mode: TurnOptions["sandboxMode"],
+  denyNetwork: boolean,
+): Record<string, unknown> {
   if (mode === "danger-full-access") {
     return { type: "dangerFullAccess" };
   }
@@ -136,14 +329,14 @@ function buildSandboxPolicy(mode: TurnOptions["sandboxMode"]): Record<string, un
     return {
       type: "readOnly",
       access: { type: "fullAccess" },
-      networkAccess: true,
+      networkAccess: !denyNetwork,
     };
   }
   return {
     type: "workspaceWrite",
     writableRoots: ["/workspace"],
     readOnlyAccess: { type: "fullAccess" },
-    networkAccess: true,
+    networkAccess: !denyNetwork,
     excludeTmpdirEnvVar: false,
     excludeSlashTmp: false,
   };
