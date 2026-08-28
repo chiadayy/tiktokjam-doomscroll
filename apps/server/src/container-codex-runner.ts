@@ -228,6 +228,7 @@ export class ContainerCodexRunner implements AgentRunner {
         sandboxMode: this.config.codexSandboxMode,
         checks: request.checks ?? [],
         trace: records,
+        lessons: request.lessons ?? [],
       });
 
       if (active.cancelled) throw new RunCancelledError();

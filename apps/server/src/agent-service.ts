@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
 import { isModelConfigured } from "./config.js";
+import { workspaceScopeCheck } from "./check-workspace-scope.js";
+import type { Check } from "./checks.js";
+import { learnFrom } from "./lessons.js";
 import { HttpError, RunCancelledError, traceOf } from "./errors.js";
 import { JsonStore } from "./store.js";
 import type {
@@ -72,6 +75,7 @@ export class AgentService {
       workspacePath: this.workspaces.workspacePath(id),
       codexThreadId: null,
       lastError: null,
+      lessons: [],
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -254,6 +258,8 @@ export class AgentService {
         prompt: run.prompt,
         threadId: agentAtStart.codexThreadId,
         runId: run.id,
+        checks: this.activeChecks(),
+        lessons: agentAtStart.lessons,
       });
       const completedAt = now();
       await this.store.mutate((database) => {
@@ -276,6 +282,7 @@ export class AgentService {
         agent.status = "ready";
         agent.codexThreadId = result.threadId;
         agent.lastError = null;
+        agent.lessons = learnFrom(agent.lessons, result.findings ?? [], run.id);
         agent.updatedAt = completedAt;
       });
     } catch (error) {
@@ -300,6 +307,24 @@ export class AgentService {
         }
       });
     }
+  }
+
+  /**
+   * Which checks run against a turn.
+   *
+   * One example check for now, switched on by LEASH_ENABLED. This is where a
+   * real registry belongs once there is more than one.
+   */
+  /**
+   * Fold a run's findings into what the Agent already knew.
+   *
+   * Only ever adds. Nothing an agent does removes a lesson, so no sequence of
+   * behaviour can teach the system to trust it more than it did before.
+   * Clearing lessons is a deliberate act by a person.
+   */
+  private activeChecks(): Check[] {
+    if (!this.config.leashEnabled) return [];
+    return [workspaceScopeCheck({ allowedPrefixes: this.config.leashAllowedPaths })];
   }
 
   private async setStatus(id: string, status: Agent["status"]): Promise<Agent> {

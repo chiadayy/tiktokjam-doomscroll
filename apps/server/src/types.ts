@@ -8,6 +8,28 @@ export type RunStatus =
   | "cancelled";
 export type MessageRole = "user" | "assistant";
 
+/**
+ * Something the Agent got wrong once, kept so it is told before it can repeat
+ * it.
+ *
+ * Lessons only ever accumulate on their own. Nothing the agent does removes
+ * one, so no sequence of behaviour can teach the system to trust it more.
+ * Clearing them is a deliberate act by a person.
+ */
+export interface Lesson {
+  /** Which check taught this, so a lesson can be traced back to a rule. */
+  code: string;
+  /** The run where the agent first got it wrong. */
+  learnedFrom: string;
+  learnedAt: string;
+  /** The standing rule, injected before a future prompt. */
+  instruction: string;
+  /** How seriously the check treated it. Feeds prioritisation. */
+  severity: "info" | "warn" | "violation";
+  /** How many runs have broken this rule. A repeat offence ranks higher. */
+  timesBroken: number;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -17,6 +39,8 @@ export interface Agent {
   workspacePath: string;
   codexThreadId: string | null;
   lastError: string | null;
+  /** Standing corrections, injected before every future prompt. */
+  lessons: Lesson[];
   createdAt: string;
   updatedAt: string;
 }
@@ -114,6 +138,8 @@ export interface RunnerResult {
   usage: RunUsage | null;
   /** Absent for the local-process runner, which is not traced. */
   trace?: RunTrace;
+  /** What the checks reported. Empty when no checks ran. */
+  findings?: import("./checks.js").Finding[];
 }
 
 export interface RunnerRequest {
@@ -123,6 +149,8 @@ export interface RunnerRequest {
   threadId: string | null;
   /** Optional so the untraced local-process runner stays compatible. */
   runId?: string;
+  /** Standing corrections to give the agent before it starts work. */
+  lessons?: Lesson[];
   /**
    * Checks to run against this run's trace. Empty means observe only, which is
    * the default for an ordinary run.

@@ -26,9 +26,24 @@ export function workspaceScopeCheck(options: ScopeOptions): Check {
 
     run(trace) {
       const findings: Finding[] = [];
+      /** Paths we have already objected to, so we object once. */
+      const objectedTo = new Set<string>();
 
       for (const change of fileChangesOf(trace)) {
+        // A change appears twice in the trace, once starting and once
+        // completing. Without this the same change produces two findings, and
+        // the agent gets corrected twice for one mistake.
+        if (change.phase !== "completed") continue;
+
         if (isAllowed(change.path, options.allowedPrefixes)) continue;
+
+        // Deleting a file we objected to is the agent doing what we asked, not
+        // a new violation. Without this we correct it for complying, which is
+        // both wrong and a loop: correct, it undoes, correct again.
+        if (change.kind === "delete" && objectedTo.has(change.path)) continue;
+
+        if (objectedTo.has(change.path)) continue;
+        objectedTo.add(change.path);
 
         findings.push({
           check: "workspace-scope",
@@ -43,6 +58,11 @@ export function workspaceScopeCheck(options: ScopeOptions): Check {
             `Stop. ${change.path} is outside the scope you may write to. ` +
             `You may only modify files under: ${options.allowedPrefixes.join(", ")}. ` +
             `Undo that change if you can, then continue the original task within those paths.`,
+          // A standing rule for future turns, so the next run starts already
+          // knowing this rather than having to be corrected again.
+          lesson:
+            `Only create or modify files under: ${options.allowedPrefixes.join(", ")}. ` +
+            `Never write anywhere else in the workspace.`,
         });
       }
 

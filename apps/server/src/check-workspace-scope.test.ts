@@ -80,3 +80,45 @@ describe("workspace scope check", () => {
     expect(check.run(trace)).toEqual([]);
   });
 });
+
+describe("bugs found by a real agent run", () => {
+  function fileEvent(path: string, kind: string, method: string): TraceRecord {
+    return {
+      seq: nextSeq++,
+      at: "2026-08-28T00:00:00.000Z",
+      dir: "in",
+      method,
+      payload: {
+        params: {
+          item: {
+            id: "item-" + path,
+            type: "fileChange",
+            changes: [{ path, kind: { type: kind }, diff: "" }],
+            status: method === "item/started" ? "inProgress" : "completed",
+          },
+        },
+      },
+    };
+  }
+
+  it("objects once per change, not once per phase", () => {
+    // A change is reported twice, starting and completing. The live run
+    // produced two corrections for one mistake because of this.
+    const trace = [
+      fileEvent("/workspace/notes.txt", "add", "item/started"),
+      fileEvent("/workspace/notes.txt", "add", "item/completed"),
+    ];
+    expect(check.run(trace)).toHaveLength(1);
+  });
+
+  it("does not object to the agent undoing what we objected to", () => {
+    // We tell the agent to undo the change. It deletes the file. That delete is
+    // also outside scope, so without this the agent is corrected for obeying,
+    // and the two of you loop.
+    const trace = [
+      fileEvent("/workspace/notes.txt", "add", "item/completed"),
+      fileEvent("/workspace/notes.txt", "delete", "item/completed"),
+    ];
+    expect(check.run(trace)).toHaveLength(1);
+  });
+});

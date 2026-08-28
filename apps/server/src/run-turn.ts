@@ -13,7 +13,8 @@
 import type { JsonRpcConnection } from "./codex-app-server-client.js";
 import { runChecks, type Check, type Finding } from "./checks.js";
 import type { TraceRecord } from "./trace.js";
-import type { RunUsage } from "./types.js";
+import { preambleFor, selectFor } from "./lessons.js";
+import type { Lesson, RunUsage } from "./types.js";
 
 export interface TurnOptions {
   rpc: JsonRpcConnection;
@@ -32,6 +33,11 @@ export interface TurnOptions {
    * owns it so the same records can also be written to disk.
    */
   trace?: TraceRecord[];
+  /**
+   * Standing corrections from earlier runs, given to the agent before its
+   * prompt so a repeated mistake is prevented rather than corrected.
+   */
+  lessons?: Lesson[];
 }
 
 export interface TurnOutcome {
@@ -142,7 +148,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
 
   const startedTurn = (await rpc.request("turn/start", {
     threadId: threadId,
-    input: [{ type: "text", text: options.prompt }],
+    input: buildInput(options.prompt, options.lessons ?? []),
     sandboxPolicy: buildSandboxPolicy(options.sandboxMode),
   })) as { turn?: { id?: string } };
   // Needed for turn/steer, which refuses to act on anything but the live turn.
@@ -233,4 +239,21 @@ function readTurnError(finalTurn: Record<string, unknown>): string | null {
   const error = turn.error as { message?: string } | undefined;
   if (error?.message !== undefined) return error.message;
   return null;
+}
+
+/**
+ * The turn's input: the rules that matter for this task, then the task.
+ *
+ * They go in as a separate message rather than being glued onto the prompt, so
+ * the trace shows plainly which text came from the middleware and which came
+ * from the person.
+ */
+function buildInput(prompt: string, lessons: Lesson[]): Array<{ type: "text"; text: string }> {
+  const preamble = preambleFor(selectFor(lessons, prompt));
+  if (preamble === null) return [{ type: "text", text: prompt }];
+
+  return [
+    { type: "text", text: preamble },
+    { type: "text", text: prompt },
+  ];
 }

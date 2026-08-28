@@ -51,6 +51,17 @@ export interface Finding {
    * A bare refusal tends to make an agent retry the same thing.
    */
   steer?: string;
+  /**
+   * What the agent should be told at the start of every future turn.
+   *
+   * `steer` corrects the agent now. `lesson` stops it making the same mistake
+   * again: the text is stored against the Agent and injected before its next
+   * prompt, so the constraint arrives before it acts rather than after.
+   *
+   * Write it as a standing rule, not a reaction. "Never write outside X" rather
+   * than "stop writing to Y".
+   */
+  lesson?: string;
 }
 
 export interface Check {
@@ -272,3 +283,4 @@ function readChangeKind(kind: unknown): string {
   const type = (kind as Record<string, unknown>).type;
   return typeof type === "string" ? type : "unknown";
 }
+

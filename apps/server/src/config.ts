@@ -62,6 +62,16 @@ const envSchema = z.object({
   ARK_PROXY_PORT: z.coerce.number().int().min(0).max(65535).default(8788),
   /** How the Runtime container reaches the host running this proxy. */
   ARK_PROXY_HOST: z.string().min(1).default("host.docker.internal"),
+  /**
+   * Turn the example check on. Off by default: with no checks configured the
+   * agent runs exactly as it would unobserved.
+   */
+  LEASH_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  /** Comma-separated container paths the agent may write to. */
+  LEASH_ALLOWED_PATHS: z.string().default("/workspace/src/,/workspace/tests/"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
@@ -121,6 +131,10 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     arkProxyPort: env.ARK_PROXY_PORT,
     arkProxyHost:
       env.RUNTIME_PROVIDER === "container" ? env.ARK_PROXY_HOST : "127.0.0.1",
+    leashEnabled: env.LEASH_ENABLED,
+    leashAllowedPaths: env.LEASH_ALLOWED_PATHS.split(",")
+      .map((value) => value.trim())
+      .filter((value) => value !== ""),
     nodeEnv: env.NODE_ENV,
   };
 }

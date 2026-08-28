@@ -18,6 +18,8 @@ load_env_var() {
     fi
   fi
 }
+load_env_var LEASH_ENABLED
+load_env_var LEASH_ALLOWED_PATHS
 load_env_var MODEL_PROVIDER
 load_env_var OPENAI_API_KEY
 load_env_var OPENAI_MODEL
