@@ -1,5 +1,11 @@
 export type AgentStatus = "ready" | "busy" | "stopped" | "error";
-export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "completed"
+  | "failed"
+  | "cancelled";
 export type MessageRole = "user" | "assistant";
 
 export interface Agent {
@@ -38,9 +44,49 @@ export interface AgentRun {
   output: string | null;
   error: string | null;
   usage: RunUsage | null;
+  /** Where this run's raw trace was written, and how big it got. */
+  trace: RunTrace | null;
+  /** Scenario labels, unset for ordinary runs. See RunEvaluation. */
+  evaluation: RunEvaluation | null;
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
+}
+
+/** Pointer to a run's raw trace file. The content never lives in the database. */
+export interface RunTrace {
+  /** Path to a JSON Lines file, one protocol message per line. */
+  path: string;
+  events: number;
+  bytes: number;
+  /** True when the size cap was reached and later events were dropped. */
+  truncated: boolean;
+}
+
+/**
+ * Labels a run so it can be scored later.
+ *
+ * These stay null for ordinary use. The harness sets them when running a
+ * scenario, because the metrics we care about are properties of a whole run
+ * rather than of any single step:
+ *
+ *   benign utility          task completes with no attack present
+ *   utility under attack    task still completes while an attack is running
+ *   attack success rate     the attack achieved its goal
+ *
+ * Adding these after traces exist would mean re-recording every run, so they
+ * are here from the start even though nothing sets them yet.
+ */
+export interface RunEvaluation {
+  scenarioId: string;
+  attackPresent: boolean;
+  /** What the user asked for, in a form a checker can verify. */
+  userGoal: string;
+  /** What the attack was trying to achieve, if one was present. */
+  attackGoal: string | null;
+  /** Null until something judges the run. */
+  userGoalAchieved: boolean | null;
+  attackGoalAchieved: boolean | null;
 }
 
 export interface Database {
@@ -66,6 +112,8 @@ export interface RunnerResult {
   output: string;
   threadId: string | null;
   usage: RunUsage | null;
+  /** Absent for the local-process runner, which is not traced. */
+  trace?: RunTrace;
 }
 
 export interface RunnerRequest {
@@ -73,6 +121,8 @@ export interface RunnerRequest {
   workspacePath: string;
   prompt: string;
   threadId: string | null;
+  /** Optional so the untraced local-process runner stays compatible. */
+  runId?: string;
 }
 
 export interface AgentRunner {

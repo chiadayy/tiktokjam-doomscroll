@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
 import { isArkConfigured } from "./config.js";
-import { HttpError, RunCancelledError } from "./errors.js";
+import { HttpError, RunCancelledError, traceOf } from "./errors.js";
 import { JsonStore } from "./store.js";
 import type {
   Agent,
@@ -170,6 +170,8 @@ export class AgentService {
       output: null,
       error: null,
       usage: null,
+      trace: null,
+      evaluation: null,
       startedAt: null,
       completedAt: null,
       createdAt: timestamp,
@@ -249,6 +251,7 @@ export class AgentService {
         workspacePath: agentAtStart.workspacePath,
         prompt: run.prompt,
         threadId: agentAtStart.codexThreadId,
+        runId: run.id,
       });
       const completedAt = now();
       await this.store.mutate((database) => {
@@ -258,6 +261,7 @@ export class AgentService {
         storedRun.status = "completed";
         storedRun.output = result.output;
         storedRun.usage = result.usage;
+        storedRun.trace = result.trace ?? null;
         storedRun.completedAt = completedAt;
         database.messages.push({
           id: randomUUID(),
@@ -282,6 +286,7 @@ export class AgentService {
         if (storedRun) {
           storedRun.status = cancelled ? "cancelled" : "failed";
           storedRun.error = message;
+          storedRun.trace = traceOf(error);
           storedRun.completedAt = completedAt;
         }
         if (agent) {

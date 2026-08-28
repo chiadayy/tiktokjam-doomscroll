@@ -35,14 +35,13 @@ describe("Container Codex runner", () => {
     expect(args).toContain("type=bind,src=/tmp/agent-workspace,dst=/workspace");
     expect(args).toContain("type=bind,src=/tmp/codex-home,dst=/codex-home");
     expect(args).toContain("501:20");
-    expect(args).toContain("workspace-write");
     expect(args).toContain("/workspace");
     expect(args).toContain("io.codejam.instance-id=test-instance");
     expect(args).toContain("keep-id");
     expect(args).not.toContain("secret-that-must-not-appear-in-argv");
   });
 
-  it("resumes a thread inside the mounted Runtime workspace", () => {
+  it("launches app-server, not exec, so the turn can be intercepted", () => {
     const config = loadConfig({
       NODE_ENV: "test",
       CODEX_HOME: "/tmp/codex-home",
@@ -57,7 +56,17 @@ describe("Container Codex runner", () => {
       },
       config,
     );
-    expect(args.slice(-3)).toEqual(["resume", "thread-123", "continue"]);
+
+    // `exec` hardcodes approval_policy=Never and closes stdin: no interception.
+    expect(args).not.toContain("exec");
+    expect(args.slice(-4)).toEqual(["codex", "app-server", "--listen", "stdio://"]);
+
+    // Without --interactive the container gets no stdin and JSON-RPC is one-way.
+    expect(args).toContain("--interactive");
+
+    // The prompt and thread now travel as JSON-RPC params, never as argv.
+    expect(args).not.toContain("continue");
+    expect(args).not.toContain("thread-123");
     expect(args).not.toContain("keep-id");
   });
 });

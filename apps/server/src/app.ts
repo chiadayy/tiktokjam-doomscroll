@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
 import { timingSafeEqual } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
@@ -126,6 +127,27 @@ export async function createApp(
   app.get("/api/runs/:id", async (request) => {
     const { id } = runIdParams.parse(request.params);
     return { run: service.getRun(id) };
+  });
+
+  /**
+   * The raw trace of a run, as JSON Lines: one protocol message per line, in
+   * the order they crossed the wire. Served as text rather than JSON because
+   * the whole point is that it is a log, not a document.
+   */
+  app.get("/api/runs/:id/trace", async (request, reply) => {
+    const { id } = runIdParams.parse(request.params);
+    const run = service.getRun(id);
+
+    if (run.trace === null) {
+      return reply.code(404).send({ error: "This run has no trace" });
+    }
+
+    const contents = await readFile(run.trace.path, "utf8").catch(() => null);
+    if (contents === null) {
+      return reply.code(404).send({ error: "Trace file is missing" });
+    }
+
+    return reply.type("application/x-ndjson").send(contents);
   });
 
   if (config.nodeEnv === "production") {
