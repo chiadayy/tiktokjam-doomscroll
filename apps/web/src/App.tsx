@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, setAuthToken } from "./api";
 import type { Agent, AgentRun, Message, SystemInfo } from "./types";
+import { Trajectory } from "./Trajectory";
+import { parseTrace, toSteps, type TraceRecord, type TraceStep } from "./trace";
 
 const starterPrompts = [
   "Create a small TypeScript CLI that prints a weather summary from sample JSON.",
@@ -45,6 +47,8 @@ export default function App() {
   const [form, setForm] = useState(emptyForm);
   const [prompt, setPrompt] = useState("");
   const [activeRun, setActiveRun] = useState<AgentRun | null>(null);
+  const [steps, setSteps] = useState<TraceStep[]>([]);
+  const [traceRecords, setTraceRecords] = useState<TraceRecord[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
@@ -98,6 +102,8 @@ export default function App() {
 
   useEffect(() => {
     setActiveRun(null);
+    setSteps([]);
+    setTraceRecords([]);
     setShowSettings(false);
     if (!selectedId) {
       setMessages([]);
@@ -201,6 +207,17 @@ export default function App() {
     }
   };
 
+  // The trace file is appended as the run happens, so reading it on every poll
+  // makes steps appear one by one rather than all at the end.
+  const refreshTrace = async (runId: string, agentId: string) => {
+    const text = await api.trace(runId);
+    if (text === null) return;
+    if (selectedIdRef.current !== agentId) return;
+    const records = parseTrace(text);
+    setTraceRecords(records);
+    setSteps(toSteps(records));
+  };
+
   const pollRun = async (runId: string, agentId: string) => {
     if (pollingRunIds.current.has(runId)) return;
     pollingRunIds.current.add(runId);
@@ -210,6 +227,7 @@ export default function App() {
         if (!mountedRef.current) return;
         const result = await api.run(runId);
         if (selectedIdRef.current === agentId) setActiveRun(result.run);
+        await refreshTrace(runId, agentId);
         if (!["queued", "running"].includes(result.run.status)) {
           await Promise.all([refreshMessages(agentId), refreshAgents()]);
           return;
@@ -241,6 +259,8 @@ export default function App() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
       setActiveRun(null);
+    setSteps([]);
+    setTraceRecords([]);
       await refreshAgents();
     }
   };
@@ -532,6 +552,13 @@ export default function App() {
                     </div>
                   </article>
                 )}
+                <Trajectory
+                  steps={steps}
+                  live={activeRun !== null && ["queued", "running"].includes(activeRun.status)}
+                  records={traceRecords}
+                  status={activeRun?.status ?? null}
+                />
+
                 {activeRun?.status === "failed" && (
                   <article className="run-error">
                     <strong>Run failed</strong>

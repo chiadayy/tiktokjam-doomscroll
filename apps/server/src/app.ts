@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import { HttpError } from "./errors.js";
+import { traceFilePath } from "./trace.js";
 import type { AgentService } from "./agent-service.js";
 
 const agentIdParams = z.object({ id: z.string().uuid() });
@@ -136,15 +137,16 @@ export async function createApp(
    */
   app.get("/api/runs/:id/trace", async (request, reply) => {
     const { id } = runIdParams.parse(request.params);
-    const run = service.getRun(id);
+    service.getRun(id); // 404s if the run does not exist
 
-    if (run.trace === null) {
-      return reply.code(404).send({ error: "This run has no trace" });
-    }
+    // The path is derived from the run id rather than read from the run
+    // record, so a trace can be read while the run is still going. The file is
+    // appended as events arrive, so polling this shows steps appearing live.
+    const path = traceFilePath(config.dataDirectory, id);
+    const contents = await readFile(path, "utf8").catch(() => null);
 
-    const contents = await readFile(run.trace.path, "utf8").catch(() => null);
     if (contents === null) {
-      return reply.code(404).send({ error: "Trace file is missing" });
+      return reply.code(404).send({ error: "No trace for this run yet" });
     }
 
     return reply.type("application/x-ndjson").send(contents);

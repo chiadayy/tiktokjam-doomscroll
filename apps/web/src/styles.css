@@ -1096,3 +1096,304 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------------------------------------------------------------
+   Trajectory: what the agent actually did, step by step.
+   --------------------------------------------------------------- */
+
+.trajectory {
+  margin: 18px 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.trajectory-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.trajectory-title {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.trajectory-count {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.trajectory-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.trajectory-step {
+  display: flex;
+  gap: 12px;
+  padding: 9px 16px;
+  border-bottom: 1px solid #f2f1ec;
+}
+
+.trajectory-step:last-child {
+  border-bottom: none;
+}
+
+.step-icon {
+  flex: 0 0 22px;
+  margin-top: 1px;
+  font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.kind-file .step-icon { color: var(--purple); }
+.kind-problem .step-icon { color: var(--red); }
+.kind-approval .step-icon { color: var(--green); }
+
+.step-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.step-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.step-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.step-title {
+  font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  font-size: 0.82rem;
+  color: var(--ink);
+  word-break: break-word;
+  min-width: 0;
+}
+
+.kind-reply .step-title,
+.kind-thinking .step-title {
+  font-family: inherit;
+  color: var(--muted);
+}
+
+.step-outcome {
+  font-size: 0.68rem;
+  padding: 1px 7px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.outcome-ok {
+  color: var(--green);
+  background: rgba(51, 144, 109, 0.1);
+}
+
+.outcome-failed {
+  color: var(--red);
+  background: rgba(197, 83, 83, 0.1);
+}
+
+.step-detail {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.trajectory-empty {
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* Tabs: readable summary vs the raw record stream. */
+
+.trajectory-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.trajectory-tabs .tab {
+  border: none;
+  background: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.trajectory-tabs .tab:hover { color: var(--ink); }
+
+.trajectory-tabs .tab-on {
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+}
+
+.kind-search .step-icon { color: var(--purple); }
+
+.raw-toggle {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  font-size: 0.74rem;
+  color: var(--purple-dark);
+  text-align: left;
+  cursor: pointer;
+}
+
+.raw-toggle:hover { background: var(--purple-soft); }
+
+.raw-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.raw-row { border-bottom: 1px solid #f2f1ec; }
+.raw-row:last-child { border-bottom: none; }
+
+/* Outbound records are where our own actions live, including any future
+   refusal or correction, so they are tinted to stand out from the agent's. */
+.raw-ours { background: rgba(105, 84, 217, 0.045); }
+
+.raw-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 16px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  font-size: 0.74rem;
+}
+
+.raw-summary:hover { background: rgba(0, 0, 0, 0.025); }
+
+.raw-seq {
+  flex: 0 0 34px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.raw-dir {
+  flex: 0 0 58px;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.raw-ours .raw-dir { color: var(--purple-dark); font-weight: 700; }
+
+.raw-method {
+  color: var(--ink);
+  word-break: break-word;
+  min-width: 0;
+}
+
+.raw-payload {
+  margin: 0;
+  padding: 10px 16px 12px 60px;
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+  font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+}
+
+/* An intervention is the moment the middleware changed what the agent did.
+   It is the thing a viewer should not be able to miss. */
+
+.kind-steer {
+  background: var(--purple-soft);
+  border-left: 3px solid var(--purple);
+}
+
+.kind-steer .step-icon { color: var(--purple-dark); }
+.kind-steer .step-label { color: var(--purple-dark); font-weight: 700; }
+.kind-steer .step-title { font-family: inherit; color: var(--purple-dark); font-weight: 600; }
+
+.kind-steer .step-detail {
+  background: #fff;
+  border-color: rgba(105, 84, 217, 0.25);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+.outcome-blocked {
+  color: var(--red);
+  background: rgba(197, 83, 83, 0.1);
+}
+
+.outcome-allowed {
+  color: var(--green);
+  background: rgba(51, 144, 109, 0.1);
+}
+
+.kind-approval .step-title { font-family: inherit; }
+
+.trajectory-collapse {
+  border: none;
+  background: none;
+  padding: 0 6px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.trajectory-collapse:hover { color: var(--ink); }
+
+.trajectory-head {
+  align-items: center;
+}

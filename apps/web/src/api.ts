@@ -78,4 +78,13 @@ export const api = {
       },
     ),
   run: (id: string) => request<{ run: AgentRun }>("/api/runs/" + id),
+  // The trace is JSON Lines, not JSON, so it bypasses the shared request
+  // helper. Returns null while a run has not written anything yet.
+  trace: async (id: string): Promise<string | null> => {
+    const response = await fetch("/api/runs/" + id + "/trace", {
+      headers: authToken ? { Authorization: "Bearer " + authToken } : {},
+    });
+    if (!response.ok) return null;
+    return response.text();
+  },
 };

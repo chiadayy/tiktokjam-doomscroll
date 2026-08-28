@@ -35,6 +35,7 @@ export interface AgentRun {
     cachedInputTokens?: number;
     outputTokens?: number;
   } | null;
+  trace: { path: string; events: number; bytes: number; truncated: boolean } | null;
   createdAt: string;
 }
 
