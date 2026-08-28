@@ -11,6 +11,9 @@ coverage/
 *.log
 *.tsbuildinfo
 .DS_Store
+CLAUDE.md
 deploy/volcengine/.terraform/
 deploy/volcengine/*.tfstate*
 deploy/volcengine/terraform.tfvars
+spike-transcript.json
+apps/server/reference/
