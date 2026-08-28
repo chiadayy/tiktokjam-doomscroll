@@ -46,6 +46,13 @@ export interface AgentRun {
   usage: RunUsage | null;
   /** Where this run's raw trace was written, and how big it got. */
   trace: RunTrace | null;
+  /**
+   * What the guard checks reported for this run. Empty when the guard was off
+   * or nothing tripped. Absent on runs recorded before the guard existed.
+   */
+  findings?: import("./checks.js").Finding[];
+  /** True when the guard refused an action or ended this run. */
+  intervened?: boolean;
   /** Scenario labels, unset for ordinary runs. See RunEvaluation. */
   evaluation: RunEvaluation | null;
   startedAt: string | null;
@@ -114,6 +121,10 @@ export interface RunnerResult {
   usage: RunUsage | null;
   /** Absent for the local-process runner, which is not traced. */
   trace?: RunTrace;
+  /** What the guard checks reported. Empty when no checks ran. */
+  findings?: import("./checks.js").Finding[];
+  /** True when the guard refused an action or ended the run. */
+  intervened?: boolean;
 }
 
 export interface RunnerRequest {

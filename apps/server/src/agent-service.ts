@@ -171,6 +171,8 @@ export class AgentService {
       error: null,
       usage: null,
       trace: null,
+      findings: [],
+      intervened: false,
       evaluation: null,
       startedAt: null,
       completedAt: null,
@@ -264,6 +266,8 @@ export class AgentService {
         storedRun.output = result.output;
         storedRun.usage = result.usage;
         storedRun.trace = result.trace ?? null;
+        storedRun.findings = result.findings ?? [];
+        storedRun.intervened = result.intervened ?? false;
         storedRun.completedAt = completedAt;
         database.messages.push({
           id: randomUUID(),

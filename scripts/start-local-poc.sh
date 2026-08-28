@@ -12,7 +12,9 @@ load_env_var() {
   local name="$1"
   if [[ -z "${!name:-}" && -f "$repo_dir/.env" ]]; then
     local value
-    value="$(grep -m1 "^${name}=" "$repo_dir/.env" | cut -d= -f2-)"
+    # `|| true` so a var that is simply absent from .env does not trip
+    # `set -o pipefail` and abort the whole script.
+    value="$(grep -m1 "^${name}=" "$repo_dir/.env" | cut -d= -f2- || true)"
     if [[ -n "$value" ]]; then
       export "$name=$value"
     fi
@@ -25,6 +27,9 @@ load_env_var ARK_API_KEY
 load_env_var ARK_MODEL
 load_env_var ARK_BASE_URL
 load_env_var APP_AUTH_TOKEN
+load_env_var GUARDRAIL_ENABLED
+load_env_var GUARDRAIL_SENSITIVE_MARKERS
+load_env_var GUARDRAIL_SANDBOX
 
 runtime_image="${CONTAINER_RUNTIME_IMAGE:-volc-agent-runtime:local}"
 runtime_base_image="${CONTAINER_RUNTIME_BASE_IMAGE:-node:22-bookworm-slim}"

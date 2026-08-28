@@ -1,11 +1,13 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
+import { sensitiveEgressCheck } from "./check-sensitive-egress.js";
+import type { Check } from "./checks.js";
 import { JsonRpcConnection } from "./codex-app-server-client.js";
 import type { AppConfig } from "./config.js";
 import { attachTrace, RunCancelledError } from "./errors.js";
 import { runTurn } from "./run-turn.js";
-import { TraceWriter, traceFilePath } from "./trace.js";
+import { TraceWriter, traceFilePath, type TraceRecord } from "./trace.js";
 import type { AgentRunner, RunnerRequest, RunnerResult } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -191,9 +193,24 @@ export class ContainerCodexRunner implements AgentRunner {
     );
     await trace.open();
 
+    // The same messages go two places: to disk as the permanent record, and to
+    // an in-memory list the checks read while the run is still going.
+    const records: TraceRecord[] = [];
+    let seq = 0;
+
     const rpc = new JsonRpcConnection(
       { stdin: child.stdin, stdout: child.stdout },
-      (direction, message) => trace.record(direction, message),
+      (direction, message) => {
+        trace.record(direction, message);
+        seq += 1;
+        records.push({
+          seq,
+          at: new Date().toISOString(),
+          dir: direction,
+          method: methodOf(message),
+          payload: message,
+        });
+      },
     );
     // A container killed mid-turn must reject in-flight requests, or the turn
     // promise hangs until the process-level timeout instead of failing cleanly.
@@ -206,11 +223,22 @@ export class ContainerCodexRunner implements AgentRunner {
     timeout.unref();
 
     try {
+      const checks = this.buildChecks();
+      const guarded = checks.length > 0;
       const outcome = await runTurn({
         rpc: rpc,
         prompt: request.prompt,
         threadId: request.threadId,
-        sandboxMode: this.config.codexSandboxMode,
+        // A guarded run is confined to the guard's own sandbox mode, not the
+        // host default, so it never runs wider than the guard expects.
+        sandboxMode: guarded ? this.config.guardrailSandbox : this.config.codexSandboxMode,
+        checks: checks,
+        trace: records,
+        // Deny network so an outbound command escalates to a permission request
+        // the checks can refuse before it runs.
+        denyNetwork: guarded,
+        // A running command that trips a violation ends the turn at once.
+        onViolation: "interrupt",
       });
 
       if (active.cancelled) throw new RunCancelledError();
@@ -220,7 +248,10 @@ export class ContainerCodexRunner implements AgentRunner {
       if (active.outputExceeded) {
         throw new Error("Codex output exceeded CODEX_MAX_OUTPUT_BYTES");
       }
-      if (!outcome.output) throw new Error("Codex completed without an agent message");
+      // A guard interrupt leaves no agent message; that is expected, not a failure.
+      if (!outcome.output && !outcome.intervened) {
+        throw new Error("Codex completed without an agent message");
+      }
       return { ...outcome, trace: await trace.close() };
     } catch (error) {
       // The trace pointer travels out on the error too. A failed run is the one
@@ -231,6 +262,20 @@ export class ContainerCodexRunner implements AgentRunner {
       void this.removeContainer(active);
       this.active.delete(request.agentId);
     }
+  }
+
+  /**
+   * The checks that run against a turn.
+   *
+   * One for now, switched on by GUARDRAIL_ENABLED. This is where a registry
+   * belongs once there is more than one.
+   */
+  private buildChecks(): Check[] {
+    if (!this.config.guardrailEnabled) return [];
+    const markers = this.config.guardrailSensitiveMarkers;
+    return [
+      sensitiveEgressCheck(markers.length > 0 ? { sensitiveMarkers: markers } : {}),
+    ];
   }
 
   /** Turn whatever went wrong into the clearest error we can. */
@@ -264,4 +309,11 @@ export class ContainerCodexRunner implements AgentRunner {
     }
     return environment;
   }
+}
+
+/** Same rule the trace writer uses, so on-disk and in-memory records match. */
+function methodOf(message: unknown): string | null {
+  if (message === null || typeof message !== "object") return null;
+  const method = (message as Record<string, unknown>).method;
+  return typeof method === "string" ? method : null;
 }
