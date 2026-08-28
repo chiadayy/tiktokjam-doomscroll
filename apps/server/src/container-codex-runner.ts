@@ -1,14 +1,12 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
+import { JsonRpcConnection } from "./codex-app-server-client.js";
 import type { AppConfig } from "./config.js";
-import { buildCodexArgs, parseCodexEventLine } from "./codex-runner.js";
-import { RunCancelledError } from "./errors.js";
-import type {
-  AgentRunner,
-  RunUsage,
-  RunnerRequest,
-  RunnerResult,
-} from "./types.js";
+import { attachTrace, RunCancelledError } from "./errors.js";
+import { runTurn } from "./run-turn.js";
+import { TraceWriter, traceFilePath } from "./trace.js";
+import type { AgentRunner, RunnerRequest, RunnerResult } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -20,13 +18,6 @@ interface ActiveContainer {
   outputExceeded: boolean;
   settled: Promise<void>;
   termination: Promise<void> | null;
-}
-
-interface ParsedEvents {
-  messages: string[];
-  threadId: string | null;
-  usage: RunUsage | null;
-  errors: string[];
 }
 
 export function containerName(agentId: string, instanceId = "default"): string {
@@ -45,6 +36,8 @@ export function buildContainerRunArgs(
     "run",
     "--rm",
     "--init",
+    // app-server speaks JSON-RPC over stdio, so the container needs stdin.
+    "--interactive",
     "--name",
     name,
     "--label",
@@ -84,7 +77,13 @@ export function buildContainerRunArgs(
     "/workspace",
     config.containerRuntimeImage,
     "codex",
-    ...buildCodexArgs(request, config.codexSandboxMode, "/workspace"),
+    // NOT `exec`. That mode hardcodes approval_policy=Never and closes its own
+    // stdin, so nothing can observe or interrupt it. `app-server` is the same
+    // binary speaking bidirectional JSON-RPC, which is what makes both the
+    // trace and any future enforcement possible.
+    "app-server",
+    "--listen",
+    "stdio://",
   ];
 }
 
@@ -148,7 +147,8 @@ export class ContainerCodexRunner implements AgentRunner {
       {
         cwd: request.workspacePath,
         env: this.childEnvironment(),
-        stdio: ["ignore", "pipe", "pipe"],
+        // stdin is a pipe now, because the protocol is two way.
+        stdio: ["pipe", "pipe", "pipe"],
       },
     );
     const settled = new Promise<void>((resolve) => {
@@ -166,36 +166,37 @@ export class ContainerCodexRunner implements AgentRunner {
     };
     this.active.set(request.agentId, active);
 
-    const parsed: ParsedEvents = {
-      messages: [],
-      threadId: request.threadId,
-      usage: null,
-      errors: [],
-    };
-    let stdout = "";
+    // Byte cap and stderr tail are the starter kit's original safety net. They
+    // stay as a crash guard and should never fire during a normal run.
     let stderr = "";
     let totalBytes = 0;
-
-    const consume = (chunk: Buffer, target: "stdout" | "stderr") => {
+    child.stdout.on("data", (chunk: Buffer) => {
       totalBytes += chunk.byteLength;
       if (totalBytes > this.config.codexMaxOutputBytes) {
         active.outputExceeded = true;
         void this.removeContainer(active);
-        return;
       }
-      if (target === "stdout") {
-        stdout += chunk.toString("utf8");
-        const lines = stdout.split(/\r?\n/);
-        stdout = lines.pop() ?? "";
-        for (const line of lines) parseCodexEventLine(line, parsed);
-      } else {
-        stderr += chunk.toString("utf8");
-        if (stderr.length > 16_384) stderr = stderr.slice(-16_384);
-      }
-    };
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+      if (stderr.length > 16_384) stderr = stderr.slice(-16_384);
+    });
 
-    child.stdout.on("data", (chunk: Buffer) => consume(chunk, "stdout"));
-    child.stderr.on("data", (chunk: Buffer) => consume(chunk, "stderr"));
+    // Every message in either direction is written to the run's trace file
+    // before anything else looks at it. Tracing never blocks or alters the
+    // exchange.
+    const trace = new TraceWriter(
+      traceFilePath(this.config.dataDirectory, request.runId ?? randomUUID()),
+    );
+    await trace.open();
+
+    const rpc = new JsonRpcConnection(
+      { stdin: child.stdin, stdout: child.stdout },
+      (direction, message) => trace.record(direction, message),
+    );
+    // A container killed mid-turn must reject in-flight requests, or the turn
+    // promise hangs until the process-level timeout instead of failing cleanly.
+    child.once("close", () => rpc.fail(new Error("Runtime container exited")));
 
     const timeout = setTimeout(() => {
       active.timedOut = true;
@@ -204,11 +205,13 @@ export class ContainerCodexRunner implements AgentRunner {
     timeout.unref();
 
     try {
-      const exitCode = await new Promise<number>((resolve, reject) => {
-        child.once("error", reject);
-        child.once("close", (code) => resolve(code ?? 1));
+      const outcome = await runTurn({
+        rpc: rpc,
+        prompt: request.prompt,
+        threadId: request.threadId,
+        sandboxMode: this.config.codexSandboxMode,
       });
-      if (stdout.trim()) parseCodexEventLine(stdout.trim(), parsed);
+
       if (active.cancelled) throw new RunCancelledError();
       if (active.timedOut) {
         throw new Error("Runtime timed out after " + this.config.codexTimeoutMs + " ms");
@@ -216,23 +219,31 @@ export class ContainerCodexRunner implements AgentRunner {
       if (active.outputExceeded) {
         throw new Error("Codex output exceeded CODEX_MAX_OUTPUT_BYTES");
       }
-      if (exitCode !== 0) {
-        const detail = parsed.errors.at(-1) ?? stderr.trim() ?? "No error detail";
-        throw new Error(
-          this.config.containerEngine +
-            " Runtime exited with code " +
-            exitCode +
-            ": " +
-            detail,
-        );
-      }
-      const output = parsed.messages.at(-1)?.trim();
-      if (!output) throw new Error("Codex completed without an agent message");
-      return { output, threadId: parsed.threadId, usage: parsed.usage };
+      if (!outcome.output) throw new Error("Codex completed without an agent message");
+      return { ...outcome, trace: await trace.close() };
+    } catch (error) {
+      // The trace pointer travels out on the error too. A failed run is the one
+      // you most want the evidence for.
+      throw attachTrace(this.describeFailure(error, active, stderr), await trace.close());
     } finally {
       clearTimeout(timeout);
+      void this.removeContainer(active);
       this.active.delete(request.agentId);
     }
+  }
+
+  /** Turn whatever went wrong into the clearest error we can. */
+  private describeFailure(error: unknown, active: ActiveContainer, stderr: string): Error {
+    if (active.cancelled) return new RunCancelledError();
+    if (active.timedOut) {
+      return new Error("Runtime timed out after " + this.config.codexTimeoutMs + " ms");
+    }
+    if (active.outputExceeded) {
+      return new Error("Codex output exceeded CODEX_MAX_OUTPUT_BYTES");
+    }
+    const detail = stderr.trim();
+    if (detail === "") return new Error(String(error));
+    return new Error(String(error) + " (stderr: " + detail + ")");
   }
 
   private childEnvironment(): NodeJS.ProcessEnv {
