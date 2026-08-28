@@ -42,6 +42,15 @@ export interface Finding {
   evidence: number[];
   /** One sentence, written for a person reading a report. */
   message: string;
+  /**
+   * What to say to the agent, if this finding should correct it mid-run.
+   *
+   * Leave it unset to record the finding without intervening. When set, the
+   * middleware sends this text into the running turn, so write it as an
+   * instruction the agent can act on: say what is wrong AND what to do instead.
+   * A bare refusal tends to make an agent retry the same thing.
+   */
+  steer?: string;
 }
 
 export interface Check {

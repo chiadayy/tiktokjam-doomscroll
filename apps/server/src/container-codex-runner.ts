@@ -5,7 +5,7 @@ import { JsonRpcConnection } from "./codex-app-server-client.js";
 import type { AppConfig } from "./config.js";
 import { attachTrace, RunCancelledError } from "./errors.js";
 import { runTurn } from "./run-turn.js";
-import { TraceWriter, traceFilePath } from "./trace.js";
+import { TraceWriter, traceFilePath, type TraceRecord } from "./trace.js";
 import type { AgentRunner, RunnerRequest, RunnerResult } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -191,9 +191,24 @@ export class ContainerCodexRunner implements AgentRunner {
     );
     await trace.open();
 
+    // The same messages go two places: to disk as the permanent record, and to
+    // an in-memory list the checks read while the run is still going.
+    const records: TraceRecord[] = [];
+    let seq = 0;
+
     const rpc = new JsonRpcConnection(
       { stdin: child.stdin, stdout: child.stdout },
-      (direction, message) => trace.record(direction, message),
+      (direction, message) => {
+        trace.record(direction, message);
+        seq += 1;
+        records.push({
+          seq,
+          at: new Date().toISOString(),
+          dir: direction,
+          method: methodOf(message),
+          payload: message,
+        });
+      },
     );
     // A container killed mid-turn must reject in-flight requests, or the turn
     // promise hangs until the process-level timeout instead of failing cleanly.
@@ -211,6 +226,8 @@ export class ContainerCodexRunner implements AgentRunner {
         prompt: request.prompt,
         threadId: request.threadId,
         sandboxMode: this.config.codexSandboxMode,
+        checks: request.checks ?? [],
+        trace: records,
       });
 
       if (active.cancelled) throw new RunCancelledError();
@@ -264,4 +281,11 @@ export class ContainerCodexRunner implements AgentRunner {
     }
     return environment;
   }
+}
+
+/** Same rule the trace writer uses, so on-disk and in-memory records match. */
+function methodOf(message: unknown): string | null {
+  if (message === null || typeof message !== "object") return null;
+  const method = (message as Record<string, unknown>).method;
+  return typeof method === "string" ? method : null;
 }

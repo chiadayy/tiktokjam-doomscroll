@@ -123,6 +123,11 @@ export interface RunnerRequest {
   threadId: string | null;
   /** Optional so the untraced local-process runner stays compatible. */
   runId?: string;
+  /**
+   * Checks to run against this run's trace. Empty means observe only, which is
+   * the default for an ordinary run.
+   */
+  checks?: import("./checks.js").Check[];
 }
 
 export interface AgentRunner {

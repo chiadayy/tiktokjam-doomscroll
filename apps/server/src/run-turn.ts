@@ -11,6 +11,8 @@
 // Enforcement belongs on top of this, driven by the checks in checks.ts.
 
 import type { JsonRpcConnection } from "./codex-app-server-client.js";
+import { runChecks, type Check, type Finding } from "./checks.js";
+import type { TraceRecord } from "./trace.js";
 import type { RunUsage } from "./types.js";
 
 export interface TurnOptions {
@@ -20,12 +22,24 @@ export interface TurnOptions {
   threadId: string | null;
   /** Mirrors CODEX_SANDBOX_MODE. */
   sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
+  /**
+   * Checks to run as the trace grows. Leave empty to observe without
+   * intervening, which is the default.
+   */
+  checks?: Check[];
+  /**
+   * The run's trace, growing as messages arrive. Checks read this. The caller
+   * owns it so the same records can also be written to disk.
+   */
+  trace?: TraceRecord[];
 }
 
 export interface TurnOutcome {
   output: string;
   threadId: string | null;
   usage: RunUsage | null;
+  /** Everything the checks reported, in the order they were found. */
+  findings: Finding[];
 }
 
 export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
@@ -35,6 +49,47 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   const messages: string[] = [];
   let usage: RunUsage | null = null;
   let turnFailure: string | null = null;
+
+  const checks = options.checks ?? [];
+  const trace = options.trace ?? [];
+  const found: Finding[] = [];
+  /** Findings already acted on, so one violation corrects the agent once. */
+  const actedOn = new Set<string>();
+  let threadIdForSteer: string | null = options.threadId;
+  let turnId: string | null = null;
+
+  /**
+   * Run every check over the trace so far and correct the agent for anything
+   * new. Called after each recorded action, so a correction lands while the
+   * agent is still working rather than after it has finished.
+   */
+  async function review(): Promise<void> {
+    if (checks.length === 0) return;
+
+    for (const finding of runChecks(checks, trace)) {
+      const key = `${finding.check}:${finding.code}:${finding.seq}`;
+      if (actedOn.has(key)) continue;
+      actedOn.add(key);
+      found.push(finding);
+
+      if (finding.steer !== undefined) {
+        await steer(finding.steer);
+      }
+    }
+  }
+
+  async function steer(text: string): Promise<void> {
+    if (threadIdForSteer === null || turnId === null) return;
+    try {
+      await rpc.request("turn/steer", {
+        threadId: threadIdForSteer,
+        input: [{ type: "text", text }],
+        expectedTurnId: turnId,
+      });
+    } catch {
+      // A turn that ended before the correction landed is not worth failing on.
+    }
+  }
 
   // Accept every permission request, immediately. The runtime blocks until we
   // answer, so not answering would change the agent's behaviour, which is the
@@ -49,6 +104,11 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   rpc.on("item/completed", function collectAgentMessage(params) {
     const item = params.item as Record<string, unknown> | undefined;
     if (item === undefined) return;
+
+    // Review after every completed action, so a correction is sent while there
+    // is still a turn to correct.
+    void review();
+
     if (item.type !== "agentMessage") return;
     if (typeof item.text !== "string") return;
     messages.push(item.text);
@@ -78,12 +138,15 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   rpc.notify("initialized", {});
 
   const threadId = await openThread(rpc, options);
+  threadIdForSteer = threadId;
 
-  await rpc.request("turn/start", {
+  const startedTurn = (await rpc.request("turn/start", {
     threadId: threadId,
     input: [{ type: "text", text: options.prompt }],
     sandboxPolicy: buildSandboxPolicy(options.sandboxMode),
-  });
+  })) as { turn?: { id?: string } };
+  // Needed for turn/steer, which refuses to act on anything but the live turn.
+  turnId = startedTurn?.turn?.id ?? null;
 
   const finalTurn = await turnFinished;
 
@@ -100,6 +163,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     output: lastMessage === undefined ? "" : lastMessage.trim(),
     threadId: threadId,
     usage: usage,
+    findings: found,
   };
 }
 
