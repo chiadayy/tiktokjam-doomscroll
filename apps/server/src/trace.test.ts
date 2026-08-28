@@ -143,3 +143,34 @@ describe("carrying the trace out of a failed run", () => {
     expect(traceOf("not an error")).toBe(null);
   });
 });
+
+describe("capturing both directions", () => {
+  it("records inbound messages, not only what we send", async () => {
+    // This was a real bug: the observer was wired into the send path only, so
+    // every trace contained our four handshake messages and nothing the agent
+    // said back. Runs looked empty even when they had succeeded.
+    const { JsonRpcConnection } = await import("./codex-app-server-client.js");
+    const { PassThrough } = await import("node:stream");
+
+    const toClient = new PassThrough();
+    const fromClient = new PassThrough();
+    const seen: Array<{ dir: string; method: string | null }> = [];
+
+    const rpc = new JsonRpcConnection(
+      { stdin: fromClient, stdout: toClient },
+      (dir, message) => {
+        const method = (message as { method?: string }).method ?? null;
+        seen.push({ dir, method });
+      },
+    );
+
+    rpc.notify("initialized", {});
+    toClient.write(JSON.stringify({ method: "turn/started", params: {} }) + "\n");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(seen).toEqual([
+      { dir: "out", method: "initialized" },
+      { dir: "in", method: "turn/started" },
+    ]);
+  });
+});

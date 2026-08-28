@@ -95,6 +95,9 @@ export class JsonRpcConnection {
       } catch {
         continue; // Non-JSON noise on stdout is not fatal.
       }
+      // Record before dispatching, so the trace holds the message even if a
+      // handler throws while processing it.
+      this.observe?.("in", message);
       this.dispatch(message);
     }
   }
