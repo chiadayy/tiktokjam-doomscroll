@@ -18,6 +18,9 @@ load_env_var() {
     fi
   fi
 }
+load_env_var MODEL_PROVIDER
+load_env_var OPENAI_API_KEY
+load_env_var OPENAI_MODEL
 load_env_var ARK_API_KEY
 load_env_var ARK_MODEL
 load_env_var ARK_BASE_URL
@@ -82,7 +85,13 @@ detect_engine() {
   return 1
 }
 
-if [[ -z "${ARK_API_KEY:-}" || -z "${ARK_MODEL:-}" ]]; then
+# Credentials depend on which model service is selected.
+if [[ "${MODEL_PROVIDER:-ark}" == "openai" ]]; then
+  if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+    log "MODEL_PROVIDER=openai requires OPENAI_API_KEY."
+    exit 2
+  fi
+elif [[ -z "${ARK_API_KEY:-}" || -z "${ARK_MODEL:-}" ]]; then
   log "ARK_API_KEY and ARK_MODEL are required."
   log "Example: ARK_API_KEY=key ARK_MODEL=ep-id ./scripts/start-local-poc.sh"
   exit 2

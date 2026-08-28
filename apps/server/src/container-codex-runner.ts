@@ -62,7 +62,8 @@ export function buildContainerRunArgs(
     "--user",
     config.containerUser,
     "--env",
-    "ARK_API_KEY",
+    // Whichever variable the selected provider reads its key from.
+    config.modelApiKeyEnvName,
     "--env",
     "CODEX_HOME=/codex-home",
     "--env",
@@ -248,7 +249,7 @@ export class ContainerCodexRunner implements AgentRunner {
 
   private childEnvironment(): NodeJS.ProcessEnv {
     const environment: NodeJS.ProcessEnv = {
-      ARK_API_KEY: this.config.arkApiKey,
+      [this.config.modelApiKeyEnvName]: this.config.modelApiKey,
       NO_COLOR: "1",
     };
     for (const name of [
