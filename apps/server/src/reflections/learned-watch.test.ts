@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { learnedWatchCheck } from "./check-learned-watch.js";
-import type { LearnedParams } from "./reflections.js";
-import type { TraceRecord } from "./trace.js";
+import { learnedWatchCheck } from "../check-learned-watch.js";
+import type { LearnedParams } from "../reflections.js";
+import type { TraceRecord } from "../trace.js";
 
 function traceBuilder() {
   let seq = 1;
