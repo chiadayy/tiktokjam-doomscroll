@@ -85,6 +85,11 @@ const envSchema = z.object({
   GUARDRAIL_SANDBOX: z
     .enum(["read-only", "workspace-write", "danger-full-access"])
     .default("workspace-write"),
+  /**
+   * Minimum base64/hex run length the outbound-blob check treats as an encoded
+   * blob. Lower catches smaller payloads at the cost of more false positives.
+   */
+  GUARDRAIL_BLOB_MIN_CHARS: z.coerce.number().int().min(16).default(128),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
@@ -149,6 +154,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
       .map((value) => value.trim())
       .filter((value) => value !== ""),
     guardrailSandbox: env.GUARDRAIL_SANDBOX,
+    guardrailBlobMinChars: env.GUARDRAIL_BLOB_MIN_CHARS,
     nodeEnv: env.NODE_ENV,
   };
 }

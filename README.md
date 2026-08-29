@@ -12,6 +12,21 @@ Volcengine ECS.
 > tracing, audit, or hardened sandbox middleware. Do not use production data or
 > credentials. See [SECURITY.md](SECURITY.md).
 
+## Selected track: Kill Switch
+
+This fork adds one piece of middleware: a **sensitive-egress guard** that stops a
+running Agent from sending workspace secrets to the network. It runs in the
+container Runtime path — not the UI — as deterministic checks over the Agent's
+own trace ([`checks.ts`](apps/server/src/checks.ts)). The same function runs
+live and offline.
+
+When `GUARDRAIL_ENABLED=true`, a guarded turn runs with network access denied,
+so any outbound command escalates to an approval request. A command that carries
+a workspace secret — names a secret file, follows a read of one, or carries a
+credential's literal bytes — is refused at that approval step before it runs,
+with `turn/interrupt` as a backstop. A safe task in the same configuration runs
+untouched. See [Guard coverage and limitations](#guard-coverage-and-limitations).
+
 ## Screenshots
 
 ### Agent Playground
@@ -206,6 +221,10 @@ cp deploy/volcengine/terraform.tfvars.example \
 | `RUNTIME_PROVIDER` | `local-process` | `container` for disposable local Runtime containers. |
 | `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox mode. |
 | `CODEX_TIMEOUT_MS` | `600000` | Maximum duration of one turn. |
+| `GUARDRAIL_ENABLED` | `false` | Run the sensitive-egress guard against every container-Runtime turn. |
+| `GUARDRAIL_SENSITIVE_MARKERS` | Built-in list | Comma-separated path substrings that mark a file as secret; overrides the default list. |
+| `GUARDRAIL_SANDBOX` | `workspace-write` | Sandbox mode a guarded turn is pinned to. |
+| `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
 | `LOCAL_POC_DATA_ROOT` | Platform-specific | Local metadata, workspace, and session directory. |
 
 See [.env.example](.env.example) for all Runtime and resource-limit options.
@@ -228,6 +247,57 @@ Deleting an Agent archives its workspace under `workspaces/.deleted/`.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for component and extension
 boundaries.
+
+## Guard coverage and limitations
+
+The sensitive-egress guard
+([`check-sensitive-egress.ts`](apps/server/src/check-sensitive-egress.ts),
+[`check-outbound-blob.ts`](apps/server/src/check-outbound-blob.ts)) reasons about
+two things: whether a command can send bytes off the machine (its *channel*),
+and whether a workspace secret is in play.
+
+**Channels recognised** by `classifyEgress`, by capability rather than tool name:
+
+| Channel | Examples |
+| --- | --- |
+| `http` | `curl`, `wget`, HTTPie, `lwp-request`, PowerShell `Invoke-WebRequest`/`iwr`, `npm`/`pip` registry traffic |
+| `dns` | `nslookup`, `dig`, `host`, `getent hosts`, `drill`, `kdig` |
+| `ssh` | `scp`, `sftp`, `rsync`, `ssh` |
+| `mail` | `mail`, `mailx`, `sendmail`, `mutt`, `ssmtp`, `swaks` |
+| `raw-socket` | `/dev/tcp`, `/dev/udp`, `nc`/`ncat`/`netcat`, `telnet`, `openssl s_client` |
+| `cloud-cli` | `aws s3`, `aws s3api put-object`, `gcloud storage`, `gsutil`, `az storage blob upload`, `rclone`, `kubectl cp` |
+| `package-publish` | `npm publish`, `git push`, `cargo publish`, `gem push`, `twine upload`, `docker push`, `poetry publish` |
+| `interpreter` | `python -c`, `python -m http.server`, `node -e`, `ruby -e`, `perl -e`, `php -r`, `deno eval` — only when a secret was already read or the inline code names a network API |
+
+**Secret signals:** marker filenames (`.env`, `id_rsa`, `.pem`, `.ssh/`,
+`.aws/credentials`, `.netrc`, `.pgpass`, …; override the list with
+`GUARDRAIL_SENSITIVE_MARKERS`), a read recorded earlier in the same run, and
+literal credential values (OpenAI, Stripe, AWS, GCP, GitHub, Slack keys, JWTs,
+PEM headers, `KEY=…` pairs) seen in one command's output and reused verbatim in
+a later command. A second check, `outbound-blob`, flags an outbound command
+carrying a base64 or hex run of `GUARDRAIL_BLOB_MIN_CHARS`+ characters
+(default 128) — a violation when a sensitive read preceded it, otherwise
+recorded only. Every finding carries a fingerprint (`sk_…(28 chars)`), never the
+secret itself.
+
+**Known gaps**, each exercised in
+[`check-sensitive-egress.bypass.test.ts`](apps/server/src/check-sensitive-egress.bypass.test.ts):
+
+- **Cross-turn split.** A secret read in one turn and sent in a later turn is
+  not caught: each turn's checks see only that turn's trace. Closing this needs
+  per-Agent value memory (started on `feat/first-intervention`).
+- **Unrecognised secret files.** A credential in a file whose name is not a
+  marker is missed if the value is never reused verbatim, the file is never
+  named in an outbound command, and its output is not credential-shaped.
+- **Secrets in git history.** `git add .env && git commit` then `git push` moves
+  the secret without ever naming it in the outbound command.
+- **Transform before send.** A value re-encoded or reversed before an
+  interpreter sends it defeats both the verbatim-value match and the blob-size
+  check.
+- **Capability list, not a taint tracker.** The guard is a capability plus
+  literal-value matcher. A determined adversary combining an unlisted channel
+  with a transformed secret can still get data out. It is a backstop, not a
+  boundary.
 
 ## Validation
 

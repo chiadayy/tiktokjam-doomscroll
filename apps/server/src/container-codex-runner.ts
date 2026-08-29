@@ -1,6 +1,7 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
+import { outboundBlobCheck } from "./check-outbound-blob.js";
 import { sensitiveEgressCheck } from "./check-sensitive-egress.js";
 import type { Check } from "./checks.js";
 import { JsonRpcConnection } from "./codex-app-server-client.js";
@@ -267,14 +268,19 @@ export class ContainerCodexRunner implements AgentRunner {
   /**
    * The checks that run against a turn.
    *
-   * One for now, switched on by GUARDRAIL_ENABLED. This is where a registry
-   * belongs once there is more than one.
+   * Switched on by GUARDRAIL_ENABLED. This is where a registry belongs once the
+   * list grows further.
    */
   private buildChecks(): Check[] {
     if (!this.config.guardrailEnabled) return [];
     const markers = this.config.guardrailSensitiveMarkers;
+    const markerOption = markers.length > 0 ? { sensitiveMarkers: markers } : {};
     return [
-      sensitiveEgressCheck(markers.length > 0 ? { sensitiveMarkers: markers } : {}),
+      sensitiveEgressCheck(markerOption),
+      outboundBlobCheck({
+        ...markerOption,
+        minBlobChars: this.config.guardrailBlobMinChars,
+      }),
     ];
   }
 
