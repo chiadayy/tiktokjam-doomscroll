@@ -103,8 +103,9 @@ const envSchema = z.object({
    * Run the agent-intent check against every turn: it reads the agent's own
    * reasoning narration and records a warning when that narration states an
    * intent to work around the guard, destroy data, exceed scope, exfiltrate a
-   * secret, or mislead the user. Warn-only — it never interrupts a turn — so it
-   * needs no sandbox change. Independent of GUARDRAIL_EGRESS_ENABLED.
+   * secret, make itself persistent, cover its tracks, or mislead the user.
+   * Warn-only — it never interrupts a turn — so it needs no sandbox change.
+   * Independent of GUARDRAIL_EGRESS_ENABLED.
    */
   GUARDRAIL_INTENT_ENABLED: z
     .string()

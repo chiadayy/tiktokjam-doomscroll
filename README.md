@@ -47,9 +47,11 @@ flag and can be tested in isolation; there is no master switch.
   says it is about to do, not what it does: it reads the reasoning narration in
   the trace and records a warning when that narration states an intent to work
   around the guard, destroy data outside the task, exceed its scope, exfiltrate
-  a secret, or mislead the user about the result. Warn-only — narration is
-  self-reported, so a finding is recorded and shown in the trajectory but never
-  interrupts a turn.
+  a secret, give itself a foothold that outlives the task, erase the record of
+  what it did, or mislead the user about the result. A clause that only weighs
+  an option and turns it down ("I could force-push, but I won't") is not a
+  stated intent and is dropped. Warn-only — narration is self-reported, so a
+  finding is recorded and shown in the trajectory but never interrupts a turn.
 
 See [Guard coverage and limitations](#guard-coverage-and-limitations).
 
@@ -332,9 +334,12 @@ secret itself.
 
 The agent-intent guard
 ([`check-agent-intent.ts`](apps/server/src/check-agent-intent.ts)) reads the
-Agent's reasoning narration and matches it against patterns for five stated
-intents: guard evasion, destruction, scope violation, exfiltration, and
-deception. Every finding is a `warn`.
+Agent's reasoning narration and matches it against patterns for seven stated
+intents: guard evasion, destruction, scope violation, exfiltration, persistence
+(a foothold that outlives the task), covering tracks (erasing logs, history, or
+the trace), and deception. A match only counts inside one clause, and a clause
+that reads as a question or a weighed-and-rejected option ("I could force-push,
+but I won't") is dropped. Every finding is a `warn`.
 
 **Limitations, by design:**
 
@@ -342,9 +347,11 @@ deception. Every finding is a `warn`.
   the trajectory; it never interrupts a turn. Turning a stated intent into a
   block needs a later step where a command corroborates it.
 - **Pattern-based, not semantic.** It matches phrasings, not meaning, so it
-  misses paraphrases ("I'll quietly route around the check") and fires on
-  hypotheticals ("I could force-push, but I won't"). It is a smoke alarm.
-- **Depends on the model narrating.** An Agent that acts without explaining, or
+  misses paraphrases ("I'll quietly slip past the monitor") and unusual wording.
+  The clause and question/rejection filters cut the common false positives but
+  not all of them. It is a smoke alarm.
+- **Reasoning layer only.** It reads `reasoning` items, not the Agent's
+  user-facing `agentMessage` text. An Agent that acts without narrating, or
   whose runtime emits no reasoning items, gives it nothing to read.
 
 ## Validation
