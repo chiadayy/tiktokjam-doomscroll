@@ -81,6 +81,18 @@ const envSchema = z.object({
     .default("false")
     .transform((value) => value === "true" || value === "1"),
   /**
+   * Carry what a guard caught into the Agent's later runs (see reflections.ts).
+   *
+   * Folded into check options before the container starts, never into the
+   * prompt, so it costs no tokens and an Agent cannot talk its way past it.
+   * Warn-only at any number of sightings: memory widens what the guards notice,
+   * never what they refuse.
+   */
+  GUARDRAIL_REFLECTION_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  /**
    * Overrides the sensitive-egress marker list entirely when set.
    * Comma-separated path substrings, e.g. ".env,id_rsa,secrets".
    */
@@ -171,6 +183,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     arkProxyHost:
       env.RUNTIME_PROVIDER === "container" ? env.ARK_PROXY_HOST : "127.0.0.1",
     egressGuardEnabled: env.GUARDRAIL_EGRESS_ENABLED,
+    reflectionGuardEnabled: env.GUARDRAIL_REFLECTION_ENABLED,
     intentGuardEnabled: env.GUARDRAIL_INTENT_ENABLED,
     guardrailSensitiveMarkers: env.GUARDRAIL_SENSITIVE_MARKERS.split(",")
       .map((value) => value.trim())

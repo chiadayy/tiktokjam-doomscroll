@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { runChecks } from "./checks.js";
-import { outboundBlobCheck } from "./check-outbound-blob.js";
-import type { TraceRecord } from "./trace.js";
+import { runChecks } from "../../src/checks.js";
+import { outboundBlobCheck } from "../../src/check-outbound-blob.js";
+import type { TraceRecord } from "../../src/trace.js";
 
 let nextSeq = 1;
 

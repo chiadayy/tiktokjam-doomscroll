@@ -9,10 +9,10 @@
 // Both checks run together here, the same pair container-codex-runner wires up.
 
 import { describe, expect, it } from "vitest";
-import { runChecks, type Finding } from "./checks.js";
-import { sensitiveEgressCheck } from "./check-sensitive-egress.js";
-import { outboundBlobCheck } from "./check-outbound-blob.js";
-import type { TraceRecord } from "./trace.js";
+import { runChecks, type Finding } from "../../src/checks.js";
+import { sensitiveEgressCheck } from "../../src/check-sensitive-egress.js";
+import { outboundBlobCheck } from "../../src/check-outbound-blob.js";
+import type { TraceRecord } from "../../src/trace.js";
 
 let nextSeq = 1;
 

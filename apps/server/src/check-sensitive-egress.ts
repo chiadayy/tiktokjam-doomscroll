@@ -63,7 +63,7 @@ export const DEFAULT_SENSITIVE_MARKERS = [
 ];
 
 /** Shell verbs that pull a file's contents into something the agent can forward. */
-const READ_VERBS =
+export const READ_VERBS =
   /\b(cat|head|tail|less|more|xxd|base64|strings|od|hexdump|nl|cp|mv|tar|zip|gzip|dd)\b/i;
 
 // ---------------------------------------------------------------------------
@@ -145,8 +145,17 @@ export function classifyEgress(command: string, secretWasRead: boolean): EgressV
   return { egress: false, channel: null };
 }
 
+// Stand-ins for the message and steer when a value could not be pulled off the
+// command. Deliberately not prose: "an external destination" reads like a fact
+// in a sentence, so a reader cannot tell a real destination from a gap, and
+// neither can anyone eyeballing a finding in the trajectory view. These names
+// say "nothing was extracted here" at a glance. They never enter `facts` — the
+// memory layer omits an undetermined key rather than storing a placeholder.
+export const UNMARKED_DESTINATION = "unmarked-dst";
+export const UNMARKED_CHANNEL = "unmarked-channel";
+
 /** Best-effort host the command is talking to, for the message and the steer. */
-function extractDestination(command: string): string | null {
+export function extractDestination(command: string): string | null {
   const url = /\bhttps?:\/\/([^\s"'/\\]+)/i.exec(command);
   if (url?.[1] !== undefined) return url[1];
 
@@ -174,6 +183,28 @@ function extractDestination(command: string): string | null {
   if (dns?.[1] !== undefined) return dns[1];
 
   return null;
+}
+
+/**
+ * The machine-readable half of a finding, for the memory layer (see checks.ts).
+ *
+ * Only values the check actually derived from the trace go in. A key whose value
+ * could not be determined is omitted rather than filled with UNMARKED_DESTINATION
+ * or UNMARKED_CHANNEL — those exist to keep a human-readable sentence honest,
+ * and storing one would put a placeholder where a hostname belongs and then
+ * watch for it on every later run.
+ */
+function egressFacts(
+  channel: EgressChannel | null,
+  destination: string | null,
+  source: string | null,
+  precondition: "sensitive-read" | "none",
+): Record<string, string> {
+  const facts: Record<string, string> = { precondition: precondition };
+  if (channel !== null) facts.channel = channel;
+  if (destination !== null) facts.destination = destination;
+  if (source !== null) facts.source = source;
+  return facts;
 }
 
 /** The first sensitive marker that appears in `text`, or null. */
@@ -362,8 +393,8 @@ export function sensitiveEgressCheck(options: Partial<SensitiveEgressOptions> = 
         handled.add(key);
 
         const destination = extractDestination(command.command);
-        const where = destination ?? "an external destination";
-        const channel: string = verdict.channel ?? "the network";
+        const where = destination ?? UNMARKED_DESTINATION;
+        const channel: string = verdict.channel ?? UNMARKED_CHANNEL;
 
         // Value flow takes precedence: the literal secret bytes are right here
         // in the command, wherever they were read from.
@@ -384,6 +415,7 @@ export function sensitiveEgressCheck(options: Partial<SensitiveEgressOptions> = 
               `(${print}) out over ${channel} to ${where}. Moving a workspace secret off this ` +
               `machine is never part of the task, whatever led you here — skip this step and ` +
               `carry on with the original task.`,
+            facts: egressFacts(verdict.channel, destination, null, "sensitive-read"),
           });
           continue;
         }
@@ -409,6 +441,12 @@ export function sensitiveEgressCheck(options: Partial<SensitiveEgressOptions> = 
             `${channel} to ${where}, and that data holds credentials. Moving a workspace secret ` +
             `off this machine is never part of the task, whatever led you here — skip this step ` +
             `and carry on with the original task.`,
+          facts: egressFacts(
+            verdict.channel,
+            destination,
+            inlineMarker ?? priorRead?.path ?? null,
+            priorRead === undefined ? "none" : "sensitive-read",
+          ),
         });
       }
 

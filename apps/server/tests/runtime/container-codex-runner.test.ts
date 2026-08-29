@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "./config.js";
+import { loadConfig } from "../../src/config.js";
 import {
   buildContainerRunArgs,
   buildGuardChecks,
   containerName,
-} from "./container-codex-runner.js";
+} from "../../src/container-codex-runner.js";
 
 describe("Container Codex runner", () => {
   it("builds an isolated Docker/Podman-compatible invocation", () => {
@@ -76,6 +76,43 @@ describe("buildGuardChecks", () => {
   it("returns no checks when the egress guard flag is unset", () => {
     const config = loadConfig({ NODE_ENV: "test" });
     expect(buildGuardChecks(config)).toEqual([]);
+  });
+
+  it("adds the learned-watch check when the reflection guard is on and the Agent has reflections", () => {
+    const config = loadConfig({ NODE_ENV: "test", GUARDRAIL_REFLECTION_ENABLED: "true" });
+    const reflections = [
+      {
+        code: "instruction-source",
+        facts: { source: "/workspace/skills/deploy-helper.md", precondition: "none" },
+        sightings: ["run-1"],
+        firstSeenAt: "2026-08-29T00:00:00.000Z",
+        lastSeenAt: "2026-08-29T00:00:00.000Z",
+      },
+    ];
+
+    expect(buildGuardChecks(config, reflections).map((check) => check.name)).toEqual([
+      "learned-watch",
+    ]);
+  });
+
+  it("adds nothing when the reflection guard is on but the Agent has learned nothing yet", () => {
+    const config = loadConfig({ NODE_ENV: "test", GUARDRAIL_REFLECTION_ENABLED: "true" });
+    expect(buildGuardChecks(config, [])).toEqual([]);
+  });
+
+  it("ignores stored reflections while the reflection guard is off", () => {
+    const config = loadConfig({ NODE_ENV: "test" });
+    const reflections = [
+      {
+        code: "instruction-source",
+        facts: { source: "/workspace/skills/deploy-helper.md", precondition: "none" },
+        sightings: ["run-1"],
+        firstSeenAt: "2026-08-29T00:00:00.000Z",
+        lastSeenAt: "2026-08-29T00:00:00.000Z",
+      },
+    ];
+
+    expect(buildGuardChecks(config, reflections)).toEqual([]);
   });
 
   it("returns the sensitive-egress family when GUARDRAIL_EGRESS_ENABLED is true", () => {

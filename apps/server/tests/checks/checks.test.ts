@@ -9,8 +9,8 @@ import {
   runChecks,
   type Check,
   type Finding,
-} from "./checks.js";
-import type { TraceRecord } from "./trace.js";
+} from "../../src/checks.js";
+import type { TraceRecord } from "../../src/trace.js";
 
 // A trace is a plain list of objects, so a test can write one by hand. This is
 // how you should test a check: build a small trace, assert what it says.

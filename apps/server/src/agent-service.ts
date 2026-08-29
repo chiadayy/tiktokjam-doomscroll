@@ -256,6 +256,7 @@ export class AgentService {
         prompt: run.prompt,
         threadId: agentAtStart.codexThreadId,
         runId: run.id,
+        reflections: agentAtStart.reflections ?? [],
       });
       const completedAt = now();
       await this.store.mutate((database) => {
@@ -269,6 +270,11 @@ export class AgentService {
         storedRun.findings = result.findings ?? [];
         storedRun.intervened = result.intervened ?? false;
         storedRun.completedAt = completedAt;
+        // Absent when the reflection guard is off, which must leave whatever is
+        // already stored alone rather than clearing it.
+        if (result.reflections !== undefined) {
+          agent.reflections = result.reflections;
+        }
         database.messages.push({
           id: randomUUID(),
           agentId: agent.id,
