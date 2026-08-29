@@ -1,6 +1,7 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
+import { agentIntentCheck } from "./check-agent-intent.js";
 import { outboundBlobCheck } from "./check-outbound-blob.js";
 import { sensitiveEgressCheck } from "./check-sensitive-egress.js";
 import type { Check } from "./checks.js";
@@ -111,6 +112,10 @@ export function buildGuardChecks(config: AppConfig): Check[] {
         minBlobChars: config.guardrailBlobMinChars,
       }),
     );
+  }
+
+  if (config.intentGuardEnabled) {
+    checks.push(agentIntentCheck());
   }
 
   return checks;

@@ -14,18 +14,46 @@ Volcengine ECS.
 
 ## Selected track: Kill Switch
 
-This fork adds one piece of middleware: a **sensitive-egress guard** that stops a
-running Agent from sending workspace secrets to the network. It runs in the
-container Runtime path — not the UI — as deterministic checks over the Agent's
-own trace ([`checks.ts`](apps/server/src/checks.ts)). The same function runs
-live and offline.
+### The threat model
 
-When `GUARDRAIL_EGRESS_ENABLED=true`, a guarded turn runs with network access denied,
-so any outbound command escalates to an approval request. A command that carries
-a workspace secret — names a secret file, follows a read of one, or carries a
-credential's literal bytes — is refused at that approval step before it runs,
-with `turn/interrupt` as a backstop. A safe task in the same configuration runs
-untouched. See [Guard coverage and limitations](#guard-coverage-and-limitations).
+The danger is not a malicious user or an attacker in the loop. It is the Agent
+going off the rails **on its own** — a bug in its reasoning loop, a bad
+inference, a misread instruction in a file it opened, or a panic in a retry
+loop. No adversary is required for an autonomous Agent to `curl` a credential
+file to the wrong place or wipe a directory it should not have touched.
+
+So this fork's middleware does not try to decide *why* the Agent is doing
+something or whether an instruction is "really" the user's — that is unknowable.
+Each guard enforces a **behavioural invariant**: something the Agent must never
+do, whatever led it there. The guard only asks whether the Agent is about to
+cross the line.
+
+### The guards
+
+Guards run in the container Runtime path — not the UI — as deterministic checks
+over the Agent's own trace ([`checks.ts`](apps/server/src/checks.ts)). The same
+function runs live and offline. Each guard has its own `GUARDRAIL_<NAME>_ENABLED`
+flag and can be tested in isolation; there is no master switch.
+
+- **Sensitive-egress guard** (`GUARDRAIL_EGRESS_ENABLED`). Invariant: workspace
+  secrets never leave the machine. A guarded turn runs with network access
+  denied, so any outbound command escalates to an approval request. A command
+  that carries a workspace secret — names a secret file, follows a read of one,
+  or carries a credential's literal bytes — is refused at that approval step
+  before it runs, with `turn/interrupt` as a backstop. A safe task in the same
+  configuration runs untouched.
+
+- **Agent-intent guard** (`GUARDRAIL_INTENT_ENABLED`). Watches what the Agent
+  says it is about to do, not what it does: it reads the reasoning narration in
+  the trace and records a warning when that narration states an intent to work
+  around the guard, destroy data outside the task, exceed its scope, exfiltrate
+  a secret, give itself a foothold that outlives the task, erase the record of
+  what it did, or mislead the user about the result. A clause that only weighs
+  an option and turns it down ("I could force-push, but I won't") is not a
+  stated intent and is dropped. Warn-only — narration is self-reported, so a
+  finding is recorded and shown in the trajectory but never interrupts a turn.
+
+See [Guard coverage and limitations](#guard-coverage-and-limitations).
 
 ## Screenshots
 
@@ -225,6 +253,7 @@ cp deploy/volcengine/terraform.tfvars.example \
 | `GUARDRAIL_SENSITIVE_MARKERS` | Built-in list | Comma-separated path substrings that mark a file as secret; overrides the default list. |
 | `GUARDRAIL_SANDBOX` | `workspace-write` | Sandbox mode a guarded turn is pinned to. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
+| `GUARDRAIL_INTENT_ENABLED` | `false` | Check the Agent's reasoning narration each turn for a stated intent to cross a line. Warn-only; never interrupts a turn. |
 | `LOCAL_POC_DATA_ROOT` | Platform-specific | Local metadata, workspace, and session directory. |
 
 See [.env.example](.env.example) for all Runtime and resource-limit options.
@@ -249,6 +278,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for component and extension
 boundaries.
 
 ## Guard coverage and limitations
+
+### Sensitive-egress guard
 
 The sensitive-egress guard
 ([`check-sensitive-egress.ts`](apps/server/src/check-sensitive-egress.ts),
@@ -298,6 +329,30 @@ secret itself.
   literal-value matcher. A determined adversary combining an unlisted channel
   with a transformed secret can still get data out. It is a backstop, not a
   boundary.
+
+### Agent-intent guard
+
+The agent-intent guard
+([`check-agent-intent.ts`](apps/server/src/check-agent-intent.ts)) reads the
+Agent's reasoning narration and matches it against patterns for seven stated
+intents: guard evasion, destruction, scope violation, exfiltration, persistence
+(a foothold that outlives the task), covering tracks (erasing logs, history, or
+the trace), and deception. A match only counts inside one clause, and a clause
+that reads as a question or a weighed-and-rejected option ("I could force-push,
+but I won't") is dropped. Every finding is a `warn`.
+
+**Limitations, by design:**
+
+- **Warn-only.** Narration is self-reported. A finding is recorded and shown in
+  the trajectory; it never interrupts a turn. Turning a stated intent into a
+  block needs a later step where a command corroborates it.
+- **Pattern-based, not semantic.** It matches phrasings, not meaning, so it
+  misses paraphrases ("I'll quietly slip past the monitor") and unusual wording.
+  The clause and question/rejection filters cut the common false positives but
+  not all of them. It is a smoke alarm.
+- **Reasoning layer only.** It reads `reasoning` items, not the Agent's
+  user-facing `agentMessage` text. An Agent that acts without narrating, or
+  whose runtime emits no reasoning items, gives it nothing to read.
 
 ## Validation
 
