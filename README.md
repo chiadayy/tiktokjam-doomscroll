@@ -14,18 +14,35 @@ Volcengine ECS.
 
 ## Selected track: Kill Switch
 
-This fork adds one piece of middleware: a **sensitive-egress guard** that stops a
-running Agent from sending workspace secrets to the network. It runs in the
-container Runtime path — not the UI — as deterministic checks over the Agent's
-own trace ([`checks.ts`](apps/server/src/checks.ts)). The same function runs
-live and offline.
+### The threat model
 
-When `GUARDRAIL_EGRESS_ENABLED=true`, a guarded turn runs with network access denied,
-so any outbound command escalates to an approval request. A command that carries
-a workspace secret — names a secret file, follows a read of one, or carries a
-credential's literal bytes — is refused at that approval step before it runs,
-with `turn/interrupt` as a backstop. A safe task in the same configuration runs
-untouched. See [Guard coverage and limitations](#guard-coverage-and-limitations).
+The danger is not a malicious user or an attacker in the loop. It is the Agent
+going off the rails **on its own** — a bug in its reasoning loop, a bad
+inference, a misread instruction in a file it opened, or a panic in a retry
+loop. No adversary is required for an autonomous Agent to `curl` a credential
+file to the wrong place or wipe a directory it should not have touched.
+
+So this fork's middleware does not try to decide *why* the Agent is doing
+something or whether an instruction is "really" the user's — that is unknowable.
+Each guard enforces a **behavioural invariant**: something the Agent must never
+do, whatever led it there. The guard only asks whether the Agent is about to
+cross the line.
+
+### The guards
+
+Guards run in the container Runtime path — not the UI — as deterministic checks
+over the Agent's own trace ([`checks.ts`](apps/server/src/checks.ts)). The same
+function runs live and offline. Each guard has its own `GUARDRAIL_<NAME>_ENABLED`
+flag and can be tested in isolation; there is no master switch.
+
+- **Sensitive-egress guard** (`GUARDRAIL_EGRESS_ENABLED`). Invariant: workspace
+  secrets never leave the machine. A guarded turn runs with network access
+  denied, so any outbound command escalates to an approval request. A command
+  that carries a workspace secret — names a secret file, follows a read of one,
+  or carries a credential's literal bytes — is refused at that approval step
+  before it runs, with `turn/interrupt` as a backstop. A safe task in the same
+  configuration runs untouched. See
+  [Guard coverage and limitations](#guard-coverage-and-limitations).
 
 ## Screenshots
 
