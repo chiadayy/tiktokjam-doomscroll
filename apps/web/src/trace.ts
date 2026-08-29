@@ -233,7 +233,13 @@ function describeItem(record: TraceRecord, item: Record<string, unknown>): Trace
   }
 
   if (item.type === "reasoning") {
-    return { ...base, kind: "thinking", title: "Thinking", detail: null, outcome: null };
+    return {
+      ...base,
+      kind: "thinking",
+      title: "Thinking",
+      detail: reasoningDetail(item),
+      outcome: null,
+    };
   }
 
   return null;
@@ -250,8 +256,47 @@ function updateOutcome(step: TraceStep, item: Record<string, unknown>): void {
     step.detail = output.trim().split("\n").slice(0, 3).join("\n");
   }
 
+  if (item.type === "reasoning") {
+    const reasoning = reasoningDetail(item);
+    if (reasoning !== null) step.detail = reasoning;
+    return;
+  }
+
   const text = asString(item.text);
   if (text !== null) step.detail = text;
+}
+
+/**
+ * The agent's reasoning narration, trimmed to the first few lines for the list.
+ * The runtime's reasoning item is not a fixed shape: the text may be `text`, or
+ * spread across `summary` / `content` parts that are strings or `{ text }`
+ * objects. Pull a string out of whichever is there.
+ */
+function reasoningDetail(item: Record<string, unknown>): string | null {
+  const parts: string[] = [];
+
+  const collect = (value: unknown): void => {
+    if (typeof value === "string") {
+      parts.push(value);
+      return;
+    }
+    if (!Array.isArray(value)) return;
+    for (const element of value) {
+      if (typeof element === "string") parts.push(element);
+      else if (element !== null && typeof element === "object") {
+        const nested = (element as Record<string, unknown>).text;
+        if (typeof nested === "string") parts.push(nested);
+      }
+    }
+  };
+
+  collect(item.text);
+  collect(item.summary);
+  collect(item.content);
+
+  const joined = parts.join("\n").trim();
+  if (joined === "") return null;
+  return joined.split("\n").slice(0, 4).join("\n");
 }
 
 /**

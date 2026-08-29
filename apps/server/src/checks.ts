@@ -234,6 +234,63 @@ export function agentMessagesOf(trace: TraceRecord[]): Array<{ seq: number; text
   return messages;
 }
 
+/**
+ * The agent's own reasoning narration, one entry per completed reasoning item,
+ * in order. This is what the model said it was thinking, not ground truth: a
+ * check may record a concern about it, but must not stop a turn on narration
+ * alone (see the note on agentMessagesOf).
+ *
+ * The runtime's reasoning item shape is not fixed. The text may arrive as
+ * `text`, or split across `summary` / `content` parts, each part a bare string
+ * or an object with a `text` field. This pulls a string out of whichever is
+ * present and joins them; if none is, the entry is skipped.
+ */
+export function reasoningOf(trace: TraceRecord[]): Array<{ seq: number; text: string }> {
+  const entries: Array<{ seq: number; text: string }> = [];
+
+  for (const record of trace) {
+    if (record.method !== "item/completed") continue;
+
+    const item = readItem(record);
+    if (item === null) continue;
+    if (item.type !== "reasoning") continue;
+
+    const text = reasoningText(item);
+    if (text !== "") {
+      entries.push({ seq: record.seq, text: text });
+    }
+  }
+
+  return entries;
+}
+
+/** Best-effort join of every string carried by a reasoning item. */
+function reasoningText(item: Record<string, unknown>): string {
+  const parts: string[] = [];
+
+  const collect = (value: unknown): void => {
+    if (typeof value === "string") {
+      parts.push(value);
+      return;
+    }
+    if (!Array.isArray(value)) return;
+    for (const element of value) {
+      if (typeof element === "string") {
+        parts.push(element);
+      } else if (element !== null && typeof element === "object") {
+        const nested = (element as Record<string, unknown>).text;
+        if (typeof nested === "string") parts.push(nested);
+      }
+    }
+  };
+
+  collect(item.text);
+  collect(item.summary);
+  collect(item.content);
+
+  return parts.join("\n").trim();
+}
+
 // ---------------------------------------------------------------------------
 // Small helpers for digging into raw payloads
 // ---------------------------------------------------------------------------

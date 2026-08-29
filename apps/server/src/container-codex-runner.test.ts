@@ -88,4 +88,25 @@ describe("buildGuardChecks", () => {
       "outbound-blob",
     ]);
   });
+
+  it("returns only the agent-intent check when just GUARDRAIL_INTENT_ENABLED is true", () => {
+    const config = loadConfig({
+      NODE_ENV: "test",
+      GUARDRAIL_INTENT_ENABLED: "true",
+    });
+    expect(buildGuardChecks(config).map((check) => check.name)).toEqual(["agent-intent"]);
+  });
+
+  it("composes the guards: each flag adds its own checks, independently", () => {
+    const config = loadConfig({
+      NODE_ENV: "test",
+      GUARDRAIL_EGRESS_ENABLED: "true",
+      GUARDRAIL_INTENT_ENABLED: "true",
+    });
+    expect(buildGuardChecks(config).map((check) => check.name)).toEqual([
+      "sensitive-egress",
+      "outbound-blob",
+      "agent-intent",
+    ]);
+  });
 });
