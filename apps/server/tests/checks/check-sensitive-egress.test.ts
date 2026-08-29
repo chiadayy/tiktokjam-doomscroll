@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { runChecks } from "./checks.js";
-import { sensitiveEgressCheck } from "./check-sensitive-egress.js";
-import type { TraceRecord } from "./trace.js";
+import { runChecks } from "../../src/checks.js";
+import { sensitiveEgressCheck } from "../../src/check-sensitive-egress.js";
+import type { TraceRecord } from "../../src/trace.js";
 
 // A trace is a plain list of objects, so these tests build one by hand. Each
 // command gets its own item id so a start and a completion pair up and a

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, setAuthToken } from "./api";
 import type { Agent, AgentRun, Message, SystemInfo } from "./types";
+import { FindingList, ReflectionList } from "./Reflections";
 import { Trajectory } from "./Trajectory";
 import { parseTrace, toSteps, type TraceRecord, type TraceStep } from "./trace";
 
@@ -559,6 +560,12 @@ export default function App() {
                   status={activeRun?.status ?? null}
                   findings={activeRun?.findings ?? []}
                 />
+
+                {activeRun?.findings !== undefined && (
+                  <FindingList findings={activeRun.findings} />
+                )}
+
+                {selected !== null && <ReflectionList reflections={selected.reflections ?? []} />}
 
                 {activeRun?.status === "failed" && (
                   <article className="run-error">

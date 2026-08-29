@@ -1426,3 +1426,141 @@ textarea:focus {
 .trajectory-head {
   align-items: center;
 }
+
+/* What the Agent has learned, and what the guards said this run. */
+
+.reflections,
+.findings {
+  margin: 18px 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.reflections-head,
+.findings-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.reflections-count {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.reflections-empty,
+.reflections-note {
+  margin: 0;
+  padding: 12px 16px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.reflections-note {
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.reflection-items,
+.finding-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reflection-item {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.reflection-subject {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reflection-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--purple);
+  background: var(--purple-soft);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.reflection-subject code,
+.finding-top code {
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.reflection-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.finding-item {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent;
+}
+
+.finding-violation {
+  border-left-color: var(--red);
+  background: #fbefed;
+}
+
+.finding-warn {
+  border-left-color: var(--purple);
+  background: var(--purple-soft);
+}
+
+.finding-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.finding-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.finding-violation .finding-badge {
+  color: #9e4545;
+}
+
+.finding-warn .finding-badge {
+  color: var(--purple-dark);
+}
+
+.finding-learned {
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.finding-message {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink);
+}

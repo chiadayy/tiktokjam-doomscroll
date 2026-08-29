@@ -17,6 +17,12 @@ export interface Agent {
   workspacePath: string;
   codexThreadId: string | null;
   lastError: string | null;
+  /**
+   * What this Agent has been stopped for before, as check parameters rather
+   * than prompt text. See reflections.ts. Absent on Agents created before the
+   * reflection guard existed, so read it as `agent.reflections ?? []`.
+   */
+  reflections?: import("./reflections.js").Reflection[];
   createdAt: string;
   updatedAt: string;
 }
@@ -125,6 +131,11 @@ export interface RunnerResult {
   findings?: import("./checks.js").Finding[];
   /** True when the guard refused an action or ended the run. */
   intervened?: boolean;
+  /**
+   * The Agent's reflections after folding in this run. Absent when the memory
+   * guard is off, which leaves whatever was already stored untouched.
+   */
+  reflections?: import("./reflections.js").Reflection[];
 }
 
 export interface RunnerRequest {
@@ -136,6 +147,8 @@ export interface RunnerRequest {
   threadId: string | null;
   /** Optional so the untraced local-process runner stays compatible. */
   runId?: string;
+  /** What this Agent has been stopped for before. Folded into check options. */
+  reflections?: import("./reflections.js").Reflection[];
 }
 
 export interface AgentRunner {

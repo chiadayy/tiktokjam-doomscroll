@@ -34,6 +34,9 @@ load_env_var GUARDRAIL_SEMANTIC_MODEL
 load_env_var GUARDRAIL_SEMANTIC_TIMEOUT_MS
 load_env_var GUARDRAIL_SENSITIVE_MARKERS
 load_env_var GUARDRAIL_SANDBOX
+load_env_var GUARDRAIL_BLOB_MIN_CHARS
+load_env_var GUARDRAIL_INTENT_ENABLED
+load_env_var GUARDRAIL_REFLECTION_ENABLED
 
 runtime_image="${CONTAINER_RUNTIME_IMAGE:-volc-agent-runtime:local}"
 runtime_base_image="${CONTAINER_RUNTIME_BASE_IMAGE:-node:22-bookworm-slim}"

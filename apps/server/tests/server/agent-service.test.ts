@@ -2,11 +2,11 @@ import { mkdtemp } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { AgentService } from "./agent-service.js";
-import { loadConfig } from "./config.js";
-import { JsonStore } from "./store.js";
-import type { AgentRunner, RunnerRequest, RunnerResult } from "./types.js";
-import { WorkspaceManager } from "./workspace.js";
+import { AgentService } from "../../src/agent-service.js";
+import { loadConfig } from "../../src/config.js";
+import { JsonStore } from "../../src/store.js";
+import type { AgentRunner, RunnerRequest, RunnerResult } from "../../src/types.js";
+import { WorkspaceManager } from "../../src/workspace.js";
 
 class FakeRunner implements AgentRunner {
   lastRequest: RunnerRequest | null = null;
