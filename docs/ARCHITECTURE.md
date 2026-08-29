@@ -11,7 +11,8 @@ flowchart LR
     Service --> Runner{"AgentRunner"}
     Runner -->|Local POC| Container["Disposable Runtime container"]
     Runner -->|ECS| Process["Codex child process"]
-    Container --> Ark["Volcengine Ark"]
+    Container --> Guard["Trace checks + semantic intent controller"]
+    Guard --> Ark["Volcengine Ark / OpenAI"]
     Process --> Ark
 ```
 
@@ -59,8 +60,29 @@ one process only.
 - `ContainerCodexRunner` starts one disposable Docker, Colima, or Podman
   container for every local turn.
 
-Both providers use argv-only process execution, bound output and time, resume
-the stored Codex thread, and escalate termination after a grace period.
+Both providers bound output and time, resume the stored Codex thread, and
+escalate termination after a grace period. The container provider uses Codex
+app-server's bidirectional JSON-RPC stream so the control plane can trace,
+approve, steer, and interrupt a live turn. The local-process provider still
+uses `codex exec` and does not run the live guard pipeline.
+
+### Guard and semantic control path
+
+```text
+verbatim JSON-RPC trace
+  ├─ deterministic Check[] ── hard invariant finding
+  └─ bounded trajectory state ── async semantic assessment
+                                  │
+                                  v
+                         deterministic IntentController
+                         allow / steer / decline / interrupt
+```
+
+The original prompt and configured Agent instructions are trusted task context.
+Repository files, tool output, reasoning narration, commands, and diffs are
+lower-authority evidence. Semantic inference never talks to the Runtime
+directly; `runTurn()` remains the only live enforcement point. Derived findings
+are persisted on the Run and do not modify the append-only raw trace.
 
 ## Deployment profiles
 

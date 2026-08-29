@@ -131,6 +131,8 @@ export interface RunnerRequest {
   agentId: string;
   workspacePath: string;
   prompt: string;
+  /** Trusted authority context for task-aware monitoring. */
+  taskContext: import("./semantic-intent-monitor.js").TrustedTaskContext;
   threadId: string | null;
   /** Optional so the untraced local-process runner stays compatible. */
   runId?: string;

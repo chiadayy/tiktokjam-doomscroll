@@ -1,18 +1,28 @@
 // Drives one turn of an agent and records everything it does.
 //
-// With no `checks` passed it decides nothing: every permission request is
-// accepted, no action is refused, no correction is sent, and the agent runs
-// exactly as it would if nobody were watching. That is still the default.
+// With neither `checks` nor an `intentController` it decides nothing: every
+// permission request is accepted, no action is refused, no correction is sent,
+// and the agent runs exactly as it would if nobody were watching. That remains
+// the default.
 //
 // When `checks` are passed it becomes the enforcement point. After each
 // recorded action the checks run over the trace so far; a `violation` with a
 // `steer` string is sent into the live turn as a correction, and a `violation`
 // on a command still waiting for permission is refused outright with `cancel`
-// (an atomic decline-and-interrupt). The checks are the deciders — this file
-// only carries their verdict onto the wire.
+// (an atomic decline-and-interrupt). An optional task-aware controller reviews
+// only meaningful semantic checkpoints. This file remains the sole place that
+// carries either verdict onto the wire.
 
 import type { JsonRpcConnection } from "./codex-app-server-client.js";
-import { runChecks, type Check, type Finding } from "./checks.js";
+import {
+  commandsOf,
+  fileChangesOf,
+  runChecks,
+  type Check,
+  type Finding,
+} from "./checks.js";
+import type { IntentController, IntentControllerResult } from "./intent-controller.js";
+import type { SemanticProposedAction } from "./semantic-intent-monitor.js";
 import type { TraceRecord } from "./trace.js";
 import type { RunUsage } from "./types.js";
 
@@ -47,6 +57,8 @@ export interface TurnOptions {
    * regardless of this, since that needs no interrupt.
    */
   onViolation?: "interrupt" | "steer-only";
+  /** Optional task-aware semantic policy. Separate from deterministic checks. */
+  intentController?: IntentController;
 }
 
 export interface TurnOutcome {
@@ -64,6 +76,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   const checks = options.checks ?? [];
   const records = options.trace ?? [];
   const onViolation = options.onViolation ?? "interrupt";
+  const intentController = options.intentController;
 
   // Collected as notifications arrive.
   const messages: string[] = [];
@@ -77,6 +90,9 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   let interruptSent = false;
   let liveThreadId: string | null = options.threadId;
   let turnId: string | null = null;
+  // Notification callbacks cannot await model calls. Chain them explicitly so
+  // an approval waits for every earlier reasoning assessment in trace order.
+  let semanticQueue: Promise<void> = Promise.resolve();
 
   // A violation fires once per turn (coarser key); anything lower is per record.
   const keyOf = (finding: Finding): string =>
@@ -111,6 +127,27 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     return found;
   }
 
+  function recordIntentResult(result: IntentControllerResult): void {
+    if (result.finding !== undefined) findings.push(result.finding);
+    if (result.decision === "steer" && result.steer !== undefined) {
+      intervened = true;
+      sendSteer(result.steer);
+    }
+  }
+
+  function queueReasoningReview(seq: number, cheapIntentSignal: boolean): void {
+    if (intentController === undefined) return;
+    const traceAtCheckpoint = [...records];
+    semanticQueue = semanticQueue.then(async () => {
+      const result = await intentController.observeReasoning(
+        traceAtCheckpoint,
+        seq,
+        cheapIntentSignal,
+      );
+      recordIntentResult(result);
+    });
+  }
+
   function sendSteer(text: string): void {
     if (liveThreadId === null || turnId === null) return;
     void rpc
@@ -142,16 +179,19 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
    * refused with `decline`, which drops that one action and lets the agent
    * carry on with the rest of the task (see codex-protocol.ts).
    */
-  function decideApproval(params: Record<string, unknown>, id: number | string): void {
-    if (checks.length === 0) {
-      rpc.reply(id, { decision: "accept" });
-      return;
-    }
+  function deterministicViolationForApproval(
+    params: Record<string, unknown>,
+  ): Finding | undefined {
+    if (checks.length === 0) return undefined;
     const pending = pendingCommandRecord(params, records);
     const trace = pending === null ? records : [...records, pending];
-    const violation = review(trace, false).find(
+    return review(trace, false).find(
       (finding) => finding.severity === "violation",
     );
+  }
+
+  function decideWithoutSemantic(params: Record<string, unknown>, id: number | string): void {
+    const violation = deterministicViolationForApproval(params);
     if (violation === undefined) {
       rpc.reply(id, { decision: "accept" });
       return;
@@ -160,8 +200,75 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     rpc.reply(id, { decision: "decline" });
   }
 
-  rpc.onRequest("item/commandExecution/requestApproval", decideApproval);
-  rpc.onRequest("item/fileChange/requestApproval", decideApproval);
+  async function decideWithSemantic(
+    kind: "command" | "file_change",
+    params: Record<string, unknown>,
+    id: number | string,
+  ): Promise<void> {
+    // Ensure a reasoning item immediately before this request has influenced
+    // the risk state before the action is approved.
+    await semanticQueue;
+
+    const violation = deterministicViolationForApproval(params);
+    if (violation !== undefined) {
+      intervened = true;
+      rpc.reply(id, { decision: "decline" });
+      return;
+    }
+
+    const action = proposedActionOf(kind, params, records);
+    if (action === null || intentController === undefined) {
+      rpc.reply(id, { decision: "accept" });
+      return;
+    }
+
+    const traceAtCheckpoint = [...records];
+    const reviewAndApply = semanticQueue.then(async () => {
+      const result = await intentController.reviewAction(traceAtCheckpoint, action);
+      if (result.finding !== undefined) findings.push(result.finding);
+      if (result.decision === "allow" || result.decision === "steer") {
+        rpc.reply(id, { decision: "accept" });
+        if (result.decision === "steer" && result.steer !== undefined) {
+          intervened = true;
+          sendSteer(result.steer);
+        }
+        return;
+      }
+
+      // Refuse the concrete action first. The correction then tells Codex how
+      // to continue instead of retrying the objective through another tool.
+      intervened = true;
+      rpc.reply(id, { decision: "decline" });
+      if (result.decision === "interrupt") {
+        sendInterrupt();
+      } else if (result.steer !== undefined) {
+        sendSteer(result.steer);
+      }
+    });
+    semanticQueue = reviewAndApply;
+    await reviewAndApply;
+  }
+
+  function commandApproval(
+    params: Record<string, unknown>,
+    id: number | string,
+  ): void | Promise<void> {
+    return intentController === undefined
+      ? decideWithoutSemantic(params, id)
+      : decideWithSemantic("command", params, id);
+  }
+
+  function fileChangeApproval(
+    params: Record<string, unknown>,
+    id: number | string,
+  ): void | Promise<void> {
+    return intentController === undefined
+      ? decideWithoutSemantic(params, id)
+      : decideWithSemantic("file_change", params, id);
+  }
+
+  rpc.onRequest("item/commandExecution/requestApproval", commandApproval);
+  rpc.onRequest("item/fileChange/requestApproval", fileChangeApproval);
 
   // Review the moment a command is announced, before it has finished, so an
   // interrupt has a chance to land before the command completes.
@@ -171,10 +278,18 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
 
   rpc.on("item/completed", function collectAgentMessage(params) {
     // Backstop: catch anything only visible once the action completed.
-    review(records, true);
+    const deterministic = review(records, true);
 
     const item = params.item as Record<string, unknown> | undefined;
     if (item === undefined) return;
+    if (item.type === "reasoning") {
+      const seq = latestItemSeq(records, item);
+      const cheapIntentSignal = deterministic.some(
+        (finding) => finding.check === "agent-intent" && finding.seq === seq,
+      );
+      queueReasoningReview(seq, cheapIntentSignal);
+      return;
+    }
     if (item.type !== "agentMessage") return;
     if (typeof item.text !== "string") return;
     messages.push(item.text);
@@ -215,6 +330,9 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   turnId = startedTurn?.turn?.id ?? null;
 
   const finalTurn = await turnFinished;
+  // Preserve assessments in the outcome even if the model completed its final
+  // message while the last reasoning review was still in flight.
+  await semanticQueue;
 
   const failureFromTurn = readTurnError(finalTurn);
   if (failureFromTurn !== null) {
@@ -286,6 +404,56 @@ function readItemId(record: TraceRecord): string | null {
   const inner = payload?.params as Record<string, unknown> | undefined;
   const item = inner?.item as Record<string, unknown> | undefined;
   return typeof item?.id === "string" ? item.id : null;
+}
+
+function latestItemSeq(records: TraceRecord[], item: Record<string, unknown>): number {
+  const itemId = typeof item.id === "string" ? item.id : null;
+  if (itemId !== null) {
+    for (let index = records.length - 1; index >= 0; index -= 1) {
+      const record = records[index];
+      if (record !== undefined && readItemId(record) === itemId) return record.seq;
+    }
+  }
+  return records.at(-1)?.seq ?? 0;
+}
+
+function proposedActionOf(
+  kind: "command" | "file_change",
+  params: Record<string, unknown>,
+  records: TraceRecord[],
+): SemanticProposedAction | null {
+  const itemId = typeof params.itemId === "string" ? params.itemId : "";
+  if (kind === "command") {
+    const existing = commandsOf(records)
+      .filter((entry) => itemId === "" || entry.itemId === itemId)
+      .at(-1);
+    const command =
+      typeof params.command === "string" ? params.command : existing?.command;
+    if ((command === undefined || command === "") && itemId === "") return null;
+    return {
+      type: "command",
+      seq: existing?.seq ?? records.length + 1,
+      itemId,
+      command: command ?? "",
+    };
+  }
+
+  const matching = fileChangesOf(records).filter(
+    (entry) => itemId === "" || entry.itemId === itemId,
+  );
+  if (matching.length === 0) {
+    return {
+      type: "file_change",
+      seq: records.at(-1)?.seq ?? records.length + 1,
+      itemId,
+      changes: [],
+    };
+  }
+  const latestSeq = matching.at(-1)?.seq ?? records.length + 1;
+  const changes = matching
+    .filter((entry) => entry.seq === latestSeq)
+    .map((entry) => ({ path: entry.path, kind: entry.kind, diff: entry.diff }));
+  return { type: "file_change", seq: latestSeq, itemId, changes };
 }
 
 /**

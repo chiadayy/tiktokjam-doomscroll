@@ -557,6 +557,7 @@ export default function App() {
                   live={activeRun !== null && ["queued", "running"].includes(activeRun.status)}
                   records={traceRecords}
                   status={activeRun?.status ?? null}
+                  findings={activeRun?.findings ?? []}
                 />
 
                 {activeRun?.status === "failed" && (

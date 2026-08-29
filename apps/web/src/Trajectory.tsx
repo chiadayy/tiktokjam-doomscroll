@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import { isOurs, isStreamingNoise, type TraceRecord, type TraceStep } from "./trace";
+import type { AgentRun } from "./types";
 
 const ICONS: Record<TraceStep["kind"], string> = {
   command: "›_",
@@ -40,9 +41,10 @@ export interface TrajectoryProps {
   live: boolean;
   /** Run status, so the empty state can explain itself. */
   status: string | null;
+  findings: NonNullable<AgentRun["findings"]>;
 }
 
-export function Trajectory({ steps, records, live, status }: TrajectoryProps) {
+export function Trajectory({ steps, records, live, status, findings }: TrajectoryProps) {
   const [view, setView] = useState<"steps" | "raw">("steps");
   const [showNoise, setShowNoise] = useState(false);
   const [open, setOpen] = useState(true);
@@ -87,7 +89,10 @@ export function Trajectory({ steps, records, live, status }: TrajectoryProps) {
 
       {open &&
         (view === "steps" ? (
-          <StepList steps={steps} live={live} records={records.length} status={status} />
+          <>
+            <FindingList findings={findings} />
+            <StepList steps={steps} live={live} records={records.length} status={status} />
+          </>
         ) : (
           <RawList
             records={visible}
@@ -97,6 +102,25 @@ export function Trajectory({ steps, records, live, status }: TrajectoryProps) {
           />
         ))}
     </section>
+  );
+}
+
+function FindingList({ findings }: { findings: NonNullable<AgentRun["findings"]> }) {
+  if (findings.length === 0) return null;
+  return (
+    <aside className="security-findings" aria-label="Security findings">
+      <strong>Security and intent findings</strong>
+      {findings.map((finding, index) => (
+        <div className={"security-finding finding-" + finding.severity} key={`${finding.check}:${finding.code}:${finding.seq}:${index}`}>
+          <span>{finding.severity}</span>
+          <div>
+            <code>{finding.check}/{finding.code}</code>
+            <p>{finding.message}</p>
+            <small>Evidence: {finding.evidence.map((seq) => `#${seq}`).join(", ")}</small>
+          </div>
+        </div>
+      ))}
+    </aside>
   );
 }
 

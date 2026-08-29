@@ -8,7 +8,12 @@ import type { Check } from "./checks.js";
 import { JsonRpcConnection } from "./codex-app-server-client.js";
 import type { AppConfig } from "./config.js";
 import { attachTrace, RunCancelledError } from "./errors.js";
+import { IntentController } from "./intent-controller.js";
 import { runTurn } from "./run-turn.js";
+import {
+  createSemanticIntentMonitor,
+  type SemanticIntentMonitor,
+} from "./semantic-intent-monitor.js";
 import { TraceWriter, traceFilePath, type TraceRecord } from "./trace.js";
 import type { AgentRunner, RunnerRequest, RunnerResult } from "./types.js";
 
@@ -123,8 +128,19 @@ export function buildGuardChecks(config: AppConfig): Check[] {
 
 export class ContainerCodexRunner implements AgentRunner {
   private readonly active = new Map<string, ActiveContainer>();
+  private readonly semanticMonitor: SemanticIntentMonitor | null;
 
-  constructor(private readonly config: AppConfig) {}
+  constructor(
+    private readonly config: AppConfig,
+    semanticMonitor?: SemanticIntentMonitor | null,
+  ) {
+    this.semanticMonitor =
+      semanticMonitor === undefined
+        ? config.semanticGuardEnabled
+          ? createSemanticIntentMonitor(config)
+          : null
+        : semanticMonitor;
+  }
 
   async isAvailable(): Promise<boolean> {
     try {
@@ -255,6 +271,10 @@ export class ContainerCodexRunner implements AgentRunner {
 
     try {
       const checks = buildGuardChecks(this.config);
+      const intentController =
+        this.semanticMonitor === null
+          ? undefined
+          : new IntentController(this.semanticMonitor, request.taskContext);
       // The egress guard is the one that needs the sandbox narrowed and the
       // network denied so an outbound command escalates to an approval it can
       // refuse. Other guards in the family read the trace and do not.
@@ -269,6 +289,7 @@ export class ContainerCodexRunner implements AgentRunner {
           ? this.config.guardrailSandbox
           : this.config.codexSandboxMode,
         checks: checks,
+        ...(intentController === undefined ? {} : { intentController }),
         trace: records,
         // Deny network so an outbound command escalates to a permission request
         // the checks can refuse before it runs.

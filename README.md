@@ -53,6 +53,13 @@ flag and can be tested in isolation; there is no master switch.
   stated intent and is dropped. Warn-only — narration is self-reported, so a
   finding is recorded and shown in the trajectory but never interrupts a turn.
 
+- **Semantic intent guard** (`GUARDRAIL_SEMANTIC_ENABLED`). A separate,
+  tool-less model compares meaningful trajectory checkpoints with the trusted
+  user prompt and Agent instructions. Reasoning can raise risk and trigger a
+  task-grounded steer; a corroborating high-risk command or file-change
+  approval is declined and steered. A repeated blocked divergence interrupts
+  the turn. Existing deterministic violations always take precedence.
+
 See [Guard coverage and limitations](#guard-coverage-and-limitations).
 
 ## Screenshots
@@ -254,6 +261,9 @@ cp deploy/volcengine/terraform.tfvars.example \
 | `GUARDRAIL_SANDBOX` | `workspace-write` | Sandbox mode a guarded turn is pinned to. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
 | `GUARDRAIL_INTENT_ENABLED` | `false` | Check the Agent's reasoning narration each turn for a stated intent to cross a line. Warn-only; never interrupts a turn. |
+| `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review at completed reasoning and selected consequential action checkpoints. Container Runtime only. |
+| `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional model override for semantic review. |
+| `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required high-impact reviews fail closed; reasoning-only reviews fail open with a warning. |
 | `LOCAL_POC_DATA_ROOT` | Platform-specific | Local metadata, workspace, and session directory. |
 
 See [.env.example](.env.example) for all Runtime and resource-limit options.
@@ -353,6 +363,29 @@ but I won't") is dropped. Every finding is a `warn`.
 - **Reasoning layer only.** It reads `reasoning` items, not the Agent's
   user-facing `agentMessage` text. An Agent that acts without narrating, or
   whose runtime emits no reasoning items, gives it nothing to read.
+
+### Semantic intent guard
+
+The semantic guard is deliberately outside the deterministic `Check`
+abstraction. `semantic-intent-monitor.ts` makes a schema-validated, tool-less
+model assessment; `trajectory-state.ts` supplies bounded recent context and
+lower-authority source provenance; `intent-controller.ts` deterministically
+maps that assessment to allow, steer, decline, or interrupt. The monitor sees
+redacted context and never controls the Runtime directly.
+
+Checkpoints are completed reasoning items and approval-gated commands or file
+changes selected by elevated risk or a small consequential-action trigger.
+Routine reads and protocol noise do not invoke the model. A reasoning-only
+failure is recorded and allowed; failure to obtain a required decision for a
+consequential action declines that action. Semantic findings and evidence are
+stored with the Run, while real approval replies, steers, and interrupts remain
+in the verbatim JSON-RPC trace.
+
+**V1 limitation:** pre-execution decline depends on Codex emitting an approval
+request. An in-sandbox workspace edit that the Runtime applies without an
+approval cannot be guaranteed to be stopped before application. Full rollback,
+cross-turn semantic memory, final-response DLP, and completion verification are
+out of scope for this version.
 
 ## Validation
 

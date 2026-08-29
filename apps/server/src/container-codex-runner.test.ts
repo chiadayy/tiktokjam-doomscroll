@@ -97,6 +97,17 @@ describe("buildGuardChecks", () => {
     expect(buildGuardChecks(config).map((check) => check.name)).toEqual(["agent-intent"]);
   });
 
+  it("keeps the asynchronous semantic monitor outside the deterministic Check registry", () => {
+    const config = loadConfig({
+      NODE_ENV: "test",
+      GUARDRAIL_SEMANTIC_ENABLED: "true",
+      GUARDRAIL_SEMANTIC_MODEL: "semantic-test-model",
+    });
+    expect(config.semanticGuardEnabled).toBe(true);
+    expect(config.semanticGuardModel).toBe("semantic-test-model");
+    expect(buildGuardChecks(config)).toEqual([]);
+  });
+
   it("composes the guards: each flag adds its own checks, independently", () => {
     const config = loadConfig({
       NODE_ENV: "test",

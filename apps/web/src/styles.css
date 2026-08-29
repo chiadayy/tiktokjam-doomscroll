@@ -1239,6 +1239,35 @@ textarea:focus {
   color: var(--muted);
 }
 
+.security-findings {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper) 88%, var(--purple) 12%);
+}
+
+.security-finding {
+  display: grid;
+  grid-template-columns: 4.75rem 1fr;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid var(--muted);
+  background: var(--paper);
+}
+
+.security-finding > span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.security-finding p { margin: 0.25rem 0; }
+.security-finding small { color: var(--muted); }
+.finding-warn { border-left-color: #c98516; }
+.finding-violation { border-left-color: var(--red); }
+.finding-info { border-left-color: var(--purple); }
+
 /* Tabs: readable summary vs the raw record stream. */
 
 .trajectory-tabs {

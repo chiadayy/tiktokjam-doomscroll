@@ -52,6 +52,8 @@ export interface Finding {
    * retry the same thing.
    */
   steer?: string;
+  /** Compact derived audit data. Never put raw secrets or model chain-of-thought here. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface Check {

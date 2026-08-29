@@ -111,6 +111,14 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((value) => value === "true" || value === "1"),
+  /** Enable the asynchronous, task-aware semantic intent monitor. Container Runtime only. */
+  GUARDRAIL_SEMANTIC_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  /** Empty means use the same configured provider model as the coding Agent. */
+  GUARDRAIL_SEMANTIC_MODEL: z.string().default(""),
+  GUARDRAIL_SEMANTIC_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(15_000),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
@@ -172,6 +180,9 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
       env.RUNTIME_PROVIDER === "container" ? env.ARK_PROXY_HOST : "127.0.0.1",
     egressGuardEnabled: env.GUARDRAIL_EGRESS_ENABLED,
     intentGuardEnabled: env.GUARDRAIL_INTENT_ENABLED,
+    semanticGuardEnabled: env.GUARDRAIL_SEMANTIC_ENABLED,
+    semanticGuardModel: env.GUARDRAIL_SEMANTIC_MODEL.trim(),
+    semanticGuardTimeoutMs: env.GUARDRAIL_SEMANTIC_TIMEOUT_MS,
     guardrailSensitiveMarkers: env.GUARDRAIL_SENSITIVE_MARKERS.split(",")
       .map((value) => value.trim())
       .filter((value) => value !== ""),

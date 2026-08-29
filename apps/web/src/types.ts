@@ -36,6 +36,16 @@ export interface AgentRun {
     outputTokens?: number;
   } | null;
   trace: { path: string; events: number; bytes: number; truncated: boolean } | null;
+  findings?: Array<{
+    check: string;
+    code: string;
+    severity: "info" | "warn" | "violation";
+    seq: number;
+    evidence: number[];
+    message: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  intervened?: boolean;
   createdAt: string;
 }
 
