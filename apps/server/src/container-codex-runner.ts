@@ -3,9 +3,11 @@ import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { agentIntentCheck } from "./check-agent-intent.js";
 import { outboundBlobCheck } from "./check-outbound-blob.js";
+import { learnedWatchCheck } from "./check-learned-watch.js";
 import { sensitiveEgressCheck } from "./check-sensitive-egress.js";
 import type { Check } from "./checks.js";
 import { JsonRpcConnection } from "./codex-app-server-client.js";
+import { learnFrom, paramsFrom, type Reflection } from "./reflections.js";
 import type { AppConfig } from "./config.js";
 import { attachTrace, RunCancelledError } from "./errors.js";
 import { runTurn } from "./run-turn.js";
@@ -99,8 +101,19 @@ export function buildContainerRunArgs(
  *
  * This is where a registry belongs once the family grows further.
  */
-export function buildGuardChecks(config: AppConfig): Check[] {
+export function buildGuardChecks(config: AppConfig, reflections: Reflection[] = []): Check[] {
   const checks: Check[] = [];
+
+  if (config.reflectionGuardEnabled && reflections.length > 0) {
+    const markers = config.guardrailSensitiveMarkers;
+    checks.push(
+      learnedWatchCheck({
+        learned: paramsFrom(reflections),
+        ...(markers.length > 0 ? { sensitiveMarkers: markers } : {}),
+        minBlobChars: config.guardrailBlobMinChars,
+      }),
+    );
+  }
 
   if (config.egressGuardEnabled) {
     const markers = config.guardrailSensitiveMarkers;
@@ -254,7 +267,8 @@ export class ContainerCodexRunner implements AgentRunner {
     timeout.unref();
 
     try {
-      const checks = buildGuardChecks(this.config);
+      const reflections = request.reflections ?? [];
+      const checks = buildGuardChecks(this.config, reflections);
       // The egress guard is the one that needs the sandbox narrowed and the
       // network denied so an outbound command escalates to an approval it can
       // refuse. Other guards in the family read the trace and do not.
@@ -288,7 +302,28 @@ export class ContainerCodexRunner implements AgentRunner {
       if (!outcome.output && !outcome.intervened) {
         throw new Error("Codex completed without an agent message");
       }
-      return { ...outcome, trace: await trace.close() };
+      // Carry this run's findings into the Agent's later runs. Runs once, at
+      // the end of the turn, so it adds nothing to the per-event cost of the
+      // guards. `now` is passed in to keep learnFrom itself replayable.
+      const learned = this.config.reflectionGuardEnabled
+        ? learnFrom({
+            reflections: reflections,
+            findings: outcome.findings,
+            trace: records,
+            runId: request.runId ?? request.agentId,
+            prompt: request.prompt,
+            now: new Date().toISOString(),
+            ...(this.config.guardrailSensitiveMarkers.length > 0
+              ? { markers: this.config.guardrailSensitiveMarkers }
+              : {}),
+          }).reflections
+        : undefined;
+
+      return {
+        ...outcome,
+        trace: await trace.close(),
+        ...(learned !== undefined ? { reflections: learned } : {}),
+      };
     } catch (error) {
       // The trace pointer travels out on the error too. A failed run is the one
       // you most want the evidence for.
