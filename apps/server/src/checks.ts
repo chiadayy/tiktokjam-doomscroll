@@ -52,6 +52,25 @@ export interface Finding {
    * retry the same thing.
    */
   steer?: string;
+  /**
+   * Machine-extracted values describing what the agent was about to do, for the
+   * memory layer to fold into the next run's check options (see reflections.ts).
+   *
+   * Every value must be lifted verbatim from a structured trace field — a parsed
+   * read action's path, a hostname pulled out of a command, a channel name from
+   * a fixed enum. Never a span of prose, and never anything a model wrote. A
+   * value constrained to a hostname charset cannot carry an instruction; a
+   * sentence cannot make that promise. reflections.ts validates every value against
+   * a per-key schema and rejects the finding outright if any fails, so a new key
+   * has to be added there deliberately.
+   *
+   * Leave it unset when the finding's only evidence is the agent's own
+   * narration. Such a check may steer, but must never author a standing rule:
+   * narration is self-reported, and a rule derived from it would outlive the
+   * turn that produced it. Omitting `facts` enforces that structurally rather
+   * than by convention.
+   */
+  facts?: Record<string, string>;
 }
 
 export interface Check {
