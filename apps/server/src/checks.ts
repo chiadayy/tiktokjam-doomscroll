@@ -52,6 +52,25 @@ export interface Finding {
    * retry the same thing.
    */
   steer?: string;
+  /**
+   * Machine-extracted values describing what the agent was about to do, for the
+   * memory layer to fold into the next run's check options (see reflections.ts).
+   *
+   * Every value must be lifted verbatim from a structured trace field — a parsed
+   * read action's path, a hostname pulled out of a command, a channel name from
+   * a fixed enum. Never a span of prose, and never anything a model wrote. A
+   * value constrained to a hostname charset cannot carry an instruction; a
+   * sentence cannot make that promise. reflections.ts validates every value against
+   * a per-key schema and rejects the finding outright if any fails, so a new key
+   * has to be added there deliberately.
+   *
+   * Leave it unset when the finding's only evidence is the agent's own
+   * narration. Such a check may steer, but must never author a standing rule:
+   * narration is self-reported, and a rule derived from it would outlive the
+   * turn that produced it. Omitting `facts` enforces that structurally rather
+   * than by convention.
+   */
+  facts?: Record<string, string>;
 }
 
 export interface Check {
@@ -232,6 +251,63 @@ export function agentMessagesOf(trace: TraceRecord[]): Array<{ seq: number; text
   }
 
   return messages;
+}
+
+/**
+ * The agent's own reasoning narration, one entry per completed reasoning item,
+ * in order. This is what the model said it was thinking, not ground truth: a
+ * check may record a concern about it, but must not stop a turn on narration
+ * alone (see the note on agentMessagesOf).
+ *
+ * The runtime's reasoning item shape is not fixed. The text may arrive as
+ * `text`, or split across `summary` / `content` parts, each part a bare string
+ * or an object with a `text` field. This pulls a string out of whichever is
+ * present and joins them; if none is, the entry is skipped.
+ */
+export function reasoningOf(trace: TraceRecord[]): Array<{ seq: number; text: string }> {
+  const entries: Array<{ seq: number; text: string }> = [];
+
+  for (const record of trace) {
+    if (record.method !== "item/completed") continue;
+
+    const item = readItem(record);
+    if (item === null) continue;
+    if (item.type !== "reasoning") continue;
+
+    const text = reasoningText(item);
+    if (text !== "") {
+      entries.push({ seq: record.seq, text: text });
+    }
+  }
+
+  return entries;
+}
+
+/** Best-effort join of every string carried by a reasoning item. */
+function reasoningText(item: Record<string, unknown>): string {
+  const parts: string[] = [];
+
+  const collect = (value: unknown): void => {
+    if (typeof value === "string") {
+      parts.push(value);
+      return;
+    }
+    if (!Array.isArray(value)) return;
+    for (const element of value) {
+      if (typeof element === "string") {
+        parts.push(element);
+      } else if (element !== null && typeof element === "object") {
+        const nested = (element as Record<string, unknown>).text;
+        if (typeof nested === "string") parts.push(nested);
+      }
+    }
+  };
+
+  collect(item.text);
+  collect(item.summary);
+  collect(item.content);
+
+  return parts.join("\n").trim();
 }
 
 // ---------------------------------------------------------------------------

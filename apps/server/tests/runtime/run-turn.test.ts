@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { sensitiveEgressCheck } from "./check-sensitive-egress.js";
-import type { JsonRpcConnection } from "./codex-app-server-client.js";
-import { runTurn } from "./run-turn.js";
-import type { TraceRecord } from "./trace.js";
+import { sensitiveEgressCheck } from "../../src/check-sensitive-egress.js";
+import type { JsonRpcConnection } from "../../src/codex-app-server-client.js";
+import { runTurn } from "../../src/run-turn.js";
+import type { TraceRecord } from "../../src/trace.js";
 
 type Handler = (params: Record<string, unknown>) => void;
 type RequestHandler = (params: Record<string, unknown>, id: number | string) => void;

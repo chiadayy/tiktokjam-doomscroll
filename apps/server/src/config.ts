@@ -81,6 +81,18 @@ const envSchema = z.object({
     .default("false")
     .transform((value) => value === "true" || value === "1"),
   /**
+   * Carry what a guard caught into the Agent's later runs (see reflections.ts).
+   *
+   * Folded into check options before the container starts, never into the
+   * prompt, so it costs no tokens and an Agent cannot talk its way past it.
+   * Warn-only at any number of sightings: memory widens what the guards notice,
+   * never what they refuse.
+   */
+  GUARDRAIL_REFLECTION_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  /**
    * Overrides the sensitive-egress marker list entirely when set.
    * Comma-separated path substrings, e.g. ".env,id_rsa,secrets".
    */
@@ -99,6 +111,18 @@ const envSchema = z.object({
    * blob. Lower catches smaller payloads at the cost of more false positives.
    */
   GUARDRAIL_BLOB_MIN_CHARS: z.coerce.number().int().min(16).default(128),
+  /**
+   * Run the agent-intent check against every turn: it reads the agent's own
+   * reasoning narration and records a warning when that narration states an
+   * intent to work around the guard, destroy data, exceed scope, exfiltrate a
+   * secret, make itself persistent, cover its tracks, or mislead the user.
+   * Warn-only — it never interrupts a turn — so it needs no sandbox change.
+   * Independent of GUARDRAIL_EGRESS_ENABLED.
+   */
+  GUARDRAIL_INTENT_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
@@ -159,6 +183,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     arkProxyHost:
       env.RUNTIME_PROVIDER === "container" ? env.ARK_PROXY_HOST : "127.0.0.1",
     egressGuardEnabled: env.GUARDRAIL_EGRESS_ENABLED,
+    reflectionGuardEnabled: env.GUARDRAIL_REFLECTION_ENABLED,
+    intentGuardEnabled: env.GUARDRAIL_INTENT_ENABLED,
     guardrailSensitiveMarkers: env.GUARDRAIL_SENSITIVE_MARKERS.split(",")
       .map((value) => value.trim())
       .filter((value) => value !== ""),
