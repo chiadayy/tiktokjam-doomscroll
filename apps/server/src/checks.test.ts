@@ -4,6 +4,7 @@ import {
   approvalsOf,
   commandsOf,
   fileChangesOf,
+  reasoningOf,
   readsOf,
   runChecks,
   type Check,
@@ -136,6 +137,45 @@ describe("reading approvals and agent messages", () => {
       }),
     ];
     expect(agentMessagesOf(trace)[0]?.text).toBe("done");
+  });
+});
+
+describe("reading the agent's reasoning out of a trace", () => {
+  const reasoning = (item: Record<string, unknown>): TraceRecord =>
+    record("in", "item/completed", { params: { item: { id: "r1", type: "reasoning", ...item } } });
+
+  it("reads a plain text field, keeping the seq", () => {
+    const trace = [reasoning({ text: "I will read the config." })];
+    expect(reasoningOf(trace)).toEqual([
+      { seq: trace[0]?.seq, text: "I will read the config." },
+    ]);
+  });
+
+  it("joins summary parts given as strings", () => {
+    const entries = reasoningOf([reasoning({ summary: ["First I check the tests.", "Then I fix them."] })]);
+    expect(entries[0]?.text).toBe("First I check the tests.\nThen I fix them.");
+  });
+
+  it("joins summary and content parts given as { text } objects", () => {
+    const entries = reasoningOf([
+      reasoning({
+        summary: [{ type: "summary_text", text: "Plan: patch the bug." }],
+        content: [{ type: "reasoning_text", text: "The off-by-one is in the loop." }],
+      }),
+    ]);
+    expect(entries[0]?.text).toBe("Plan: patch the bug.\nThe off-by-one is in the loop.");
+  });
+
+  it("skips a reasoning item that carries no string", () => {
+    expect(reasoningOf([reasoning({ summary: [], content: [] })])).toEqual([]);
+  });
+
+  it("ignores an in-progress reasoning item, only reading the completed one", () => {
+    const trace = [
+      record("in", "item/started", { params: { item: { id: "r1", type: "reasoning" } } }),
+      reasoning({ text: "settled thought" }),
+    ];
+    expect(reasoningOf(trace)).toEqual([{ seq: trace[1]?.seq, text: "settled thought" }]);
   });
 });
 

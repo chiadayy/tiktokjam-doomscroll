@@ -41,8 +41,17 @@ flag and can be tested in isolation; there is no master switch.
   that carries a workspace secret — names a secret file, follows a read of one,
   or carries a credential's literal bytes — is refused at that approval step
   before it runs, with `turn/interrupt` as a backstop. A safe task in the same
-  configuration runs untouched. See
-  [Guard coverage and limitations](#guard-coverage-and-limitations).
+  configuration runs untouched.
+
+- **Agent-intent guard** (`GUARDRAIL_INTENT_ENABLED`). Watches what the Agent
+  says it is about to do, not what it does: it reads the reasoning narration in
+  the trace and records a warning when that narration states an intent to work
+  around the guard, destroy data outside the task, exceed its scope, exfiltrate
+  a secret, or mislead the user about the result. Warn-only — narration is
+  self-reported, so a finding is recorded and shown in the trajectory but never
+  interrupts a turn.
+
+See [Guard coverage and limitations](#guard-coverage-and-limitations).
 
 ## Screenshots
 
@@ -242,6 +251,7 @@ cp deploy/volcengine/terraform.tfvars.example \
 | `GUARDRAIL_SENSITIVE_MARKERS` | Built-in list | Comma-separated path substrings that mark a file as secret; overrides the default list. |
 | `GUARDRAIL_SANDBOX` | `workspace-write` | Sandbox mode a guarded turn is pinned to. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
+| `GUARDRAIL_INTENT_ENABLED` | `false` | Check the Agent's reasoning narration each turn for a stated intent to cross a line. Warn-only; never interrupts a turn. |
 | `LOCAL_POC_DATA_ROOT` | Platform-specific | Local metadata, workspace, and session directory. |
 
 See [.env.example](.env.example) for all Runtime and resource-limit options.
@@ -266,6 +276,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for component and extension
 boundaries.
 
 ## Guard coverage and limitations
+
+### Sensitive-egress guard
 
 The sensitive-egress guard
 ([`check-sensitive-egress.ts`](apps/server/src/check-sensitive-egress.ts),
@@ -315,6 +327,25 @@ secret itself.
   literal-value matcher. A determined adversary combining an unlisted channel
   with a transformed secret can still get data out. It is a backstop, not a
   boundary.
+
+### Agent-intent guard
+
+The agent-intent guard
+([`check-agent-intent.ts`](apps/server/src/check-agent-intent.ts)) reads the
+Agent's reasoning narration and matches it against patterns for five stated
+intents: guard evasion, destruction, scope violation, exfiltration, and
+deception. Every finding is a `warn`.
+
+**Limitations, by design:**
+
+- **Warn-only.** Narration is self-reported. A finding is recorded and shown in
+  the trajectory; it never interrupts a turn. Turning a stated intent into a
+  block needs a later step where a command corroborates it.
+- **Pattern-based, not semantic.** It matches phrasings, not meaning, so it
+  misses paraphrases ("I'll quietly route around the check") and fires on
+  hypotheticals ("I could force-push, but I won't"). It is a smoke alarm.
+- **Depends on the model narrating.** An Agent that acts without explaining, or
+  whose runtime emits no reasoning items, gives it nothing to read.
 
 ## Validation
 
