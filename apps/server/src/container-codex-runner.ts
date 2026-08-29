@@ -91,6 +91,31 @@ export function buildContainerRunArgs(
   ];
 }
 
+/**
+ * The guard checks that run against a turn, one family per `GUARDRAIL_*_ENABLED`
+ * flag. Each flag is independent so a guard can be tested on its own; there is
+ * no master switch. An empty list means observe-only — no interception.
+ *
+ * This is where a registry belongs once the family grows further.
+ */
+export function buildGuardChecks(config: AppConfig): Check[] {
+  const checks: Check[] = [];
+
+  if (config.egressGuardEnabled) {
+    const markers = config.guardrailSensitiveMarkers;
+    const markerOption = markers.length > 0 ? { sensitiveMarkers: markers } : {};
+    checks.push(
+      sensitiveEgressCheck(markerOption),
+      outboundBlobCheck({
+        ...markerOption,
+        minBlobChars: config.guardrailBlobMinChars,
+      }),
+    );
+  }
+
+  return checks;
+}
+
 export class ContainerCodexRunner implements AgentRunner {
   private readonly active = new Map<string, ActiveContainer>();
 
@@ -224,20 +249,25 @@ export class ContainerCodexRunner implements AgentRunner {
     timeout.unref();
 
     try {
-      const checks = this.buildChecks();
-      const guarded = checks.length > 0;
+      const checks = buildGuardChecks(this.config);
+      // The egress guard is the one that needs the sandbox narrowed and the
+      // network denied so an outbound command escalates to an approval it can
+      // refuse. Other guards in the family read the trace and do not.
+      const egressGuardActive = this.config.egressGuardEnabled;
       const outcome = await runTurn({
         rpc: rpc,
         prompt: request.prompt,
         threadId: request.threadId,
         // A guarded run is confined to the guard's own sandbox mode, not the
         // host default, so it never runs wider than the guard expects.
-        sandboxMode: guarded ? this.config.guardrailSandbox : this.config.codexSandboxMode,
+        sandboxMode: egressGuardActive
+          ? this.config.guardrailSandbox
+          : this.config.codexSandboxMode,
         checks: checks,
         trace: records,
         // Deny network so an outbound command escalates to a permission request
         // the checks can refuse before it runs.
-        denyNetwork: guarded,
+        denyNetwork: egressGuardActive,
         // A running command that trips a violation ends the turn at once.
         onViolation: "interrupt",
       });
@@ -263,25 +293,6 @@ export class ContainerCodexRunner implements AgentRunner {
       void this.removeContainer(active);
       this.active.delete(request.agentId);
     }
-  }
-
-  /**
-   * The checks that run against a turn.
-   *
-   * Switched on by GUARDRAIL_ENABLED. This is where a registry belongs once the
-   * list grows further.
-   */
-  private buildChecks(): Check[] {
-    if (!this.config.guardrailEnabled) return [];
-    const markers = this.config.guardrailSensitiveMarkers;
-    const markerOption = markers.length > 0 ? { sensitiveMarkers: markers } : {};
-    return [
-      sensitiveEgressCheck(markerOption),
-      outboundBlobCheck({
-        ...markerOption,
-        minBlobChars: this.config.guardrailBlobMinChars,
-      }),
-    ];
   }
 
   /** Turn whatever went wrong into the clearest error we can. */

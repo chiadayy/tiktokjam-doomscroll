@@ -20,7 +20,7 @@ container Runtime path — not the UI — as deterministic checks over the Agent
 own trace ([`checks.ts`](apps/server/src/checks.ts)). The same function runs
 live and offline.
 
-When `GUARDRAIL_ENABLED=true`, a guarded turn runs with network access denied,
+When `GUARDRAIL_EGRESS_ENABLED=true`, a guarded turn runs with network access denied,
 so any outbound command escalates to an approval request. A command that carries
 a workspace secret — names a secret file, follows a read of one, or carries a
 credential's literal bytes — is refused at that approval step before it runs,
@@ -221,7 +221,7 @@ cp deploy/volcengine/terraform.tfvars.example \
 | `RUNTIME_PROVIDER` | `local-process` | `container` for disposable local Runtime containers. |
 | `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox mode. |
 | `CODEX_TIMEOUT_MS` | `600000` | Maximum duration of one turn. |
-| `GUARDRAIL_ENABLED` | `false` | Run the sensitive-egress guard against every container-Runtime turn. |
+| `GUARDRAIL_EGRESS_ENABLED` | `false` | Run the sensitive-egress and outbound-blob checks against every container-Runtime turn. Each guard in the family has its own flag; there is no master switch. |
 | `GUARDRAIL_SENSITIVE_MARKERS` | Built-in list | Comma-separated path substrings that mark a file as secret; overrides the default list. |
 | `GUARDRAIL_SANDBOX` | `workspace-write` | Sandbox mode a guarded turn is pinned to. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |

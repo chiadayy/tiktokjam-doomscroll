@@ -63,11 +63,20 @@ const envSchema = z.object({
   /** How the Runtime container reaches the host running this proxy. */
   ARK_PROXY_HOST: z.string().min(1).default("host.docker.internal"),
   /**
-   * Run the guard checks against every turn. Off by default: with no checks
-   * the agent runs exactly as it would unobserved. Only the container runtime
-   * is traced, so this has no effect on the local-process runner.
+   * Run the sensitive-egress family of checks (sensitive-egress and
+   * outbound-blob) against every turn, and pin a guarded turn to
+   * GUARDRAIL_SANDBOX with network denied so an outbound command escalates to
+   * an approval the guard can refuse. Off by default: with no checks the agent
+   * runs exactly as it would unobserved.
+   *
+   * This is one guard in what will be a family. Each guard gets its own
+   * GUARDRAIL_<NAME>_ENABLED flag so a teammate can test their piece in
+   * isolation; there is deliberately no master switch.
+   *
+   * Only the container runtime is traced, so this has no effect on the
+   * local-process runner.
    */
-  GUARDRAIL_ENABLED: z
+  GUARDRAIL_EGRESS_ENABLED: z
     .string()
     .default("false")
     .transform((value) => value === "true" || value === "1"),
@@ -149,7 +158,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     arkProxyPort: env.ARK_PROXY_PORT,
     arkProxyHost:
       env.RUNTIME_PROVIDER === "container" ? env.ARK_PROXY_HOST : "127.0.0.1",
-    guardrailEnabled: env.GUARDRAIL_ENABLED,
+    egressGuardEnabled: env.GUARDRAIL_EGRESS_ENABLED,
     guardrailSensitiveMarkers: env.GUARDRAIL_SENSITIVE_MARKERS.split(",")
       .map((value) => value.trim())
       .filter((value) => value !== ""),

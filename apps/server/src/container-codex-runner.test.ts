@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
 import {
   buildContainerRunArgs,
+  buildGuardChecks,
   containerName,
 } from "./container-codex-runner.js";
 
@@ -68,5 +69,23 @@ describe("Container Codex runner", () => {
     expect(args).not.toContain("continue");
     expect(args).not.toContain("thread-123");
     expect(args).not.toContain("keep-id");
+  });
+});
+
+describe("buildGuardChecks", () => {
+  it("returns no checks when the egress guard flag is unset", () => {
+    const config = loadConfig({ NODE_ENV: "test" });
+    expect(buildGuardChecks(config)).toEqual([]);
+  });
+
+  it("returns the sensitive-egress family when GUARDRAIL_EGRESS_ENABLED is true", () => {
+    const config = loadConfig({
+      NODE_ENV: "test",
+      GUARDRAIL_EGRESS_ENABLED: "true",
+    });
+    expect(buildGuardChecks(config).map((check) => check.name)).toEqual([
+      "sensitive-egress",
+      "outbound-blob",
+    ]);
   });
 });
