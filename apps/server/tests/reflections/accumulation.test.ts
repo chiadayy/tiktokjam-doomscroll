@@ -1,7 +1,7 @@
 // How reflections accumulate across runs: identity, dedup, and determinism.
 
 import { describe, expect, it } from "vitest";
-import { reflectionKey } from "../reflections.js";
+import { reflectionKey } from "../../src/reflections.js";
 import { NOW, egressFinding, learn } from "./fixtures.js";
 
 describe("sightings", () => {

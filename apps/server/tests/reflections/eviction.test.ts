@@ -1,7 +1,7 @@
 // Bounded memory, and the reason the caps are partitioned per code.
 
 import { describe, expect, it } from "vitest";
-import { evict, type Reflection } from "../reflections.js";
+import { evict, type Reflection } from "../../src/reflections.js";
 import { NOW, destinationReflection } from "./fixtures.js";
 
 const sourceReflection: Reflection = {

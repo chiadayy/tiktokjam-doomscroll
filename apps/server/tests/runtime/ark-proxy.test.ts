@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { repairArkInput } from "./ark-proxy.js";
+import { repairArkInput } from "../../src/ark-proxy.js";
 
 describe("repairArkInput", () => {
   it("adds status to prior-turn items Ark validates", () => {

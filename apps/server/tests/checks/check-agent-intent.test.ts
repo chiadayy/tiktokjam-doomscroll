@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { agentIntentCheck } from "./check-agent-intent.js";
-import type { TraceRecord } from "./trace.js";
+import { agentIntentCheck } from "../../src/check-agent-intent.js";
+import type { TraceRecord } from "../../src/trace.js";
 
 // A trace is a plain list of objects. These build one reasoning item at a time
 // and assert what the check says about the narration in it.

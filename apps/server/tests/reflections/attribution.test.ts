@@ -6,7 +6,7 @@
 // package.json and two source files alongside the actual checklist.
 
 import { describe, expect, it } from "vitest";
-import { attributeSources } from "../reflections.js";
+import { attributeSources } from "../../src/reflections.js";
 import { egressFinding, learn, traceBuilder } from "./fixtures.js";
 
 const CHECKLIST = `# deploy-helper

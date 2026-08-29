@@ -4,9 +4,9 @@
 // point of keeping checks pure. Each builder gets its own counter so the seq
 // numbers inside one test mean something.
 
-import type { Finding } from "../checks.js";
-import { learnFrom, type Reflection } from "../reflections.js";
-import type { TraceRecord } from "../trace.js";
+import type { Finding } from "../../src/checks.js";
+import { learnFrom, type Reflection } from "../../src/reflections.js";
+import type { TraceRecord } from "../../src/trace.js";
 
 export const NOW = "2026-08-29T12:00:00.000Z";
 

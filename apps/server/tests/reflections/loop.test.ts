@@ -11,10 +11,10 @@
 // replay recorded runs offline at no cost.
 
 import { describe, expect, it } from "vitest";
-import { learnedWatchCheck } from "../check-learned-watch.js";
-import { sensitiveEgressCheck } from "../check-sensitive-egress.js";
-import { learnFrom, paramsFrom } from "../reflections.js";
-import type { TraceRecord } from "../trace.js";
+import { learnedWatchCheck } from "../../src/check-learned-watch.js";
+import { sensitiveEgressCheck } from "../../src/check-sensitive-egress.js";
+import { learnFrom, paramsFrom } from "../../src/reflections.js";
+import type { TraceRecord } from "../../src/trace.js";
 
 function traceBuilder() {
   let seq = 1;

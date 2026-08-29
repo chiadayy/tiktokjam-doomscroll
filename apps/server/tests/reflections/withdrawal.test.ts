@@ -3,7 +3,7 @@
 // clear.
 
 import { describe, expect, it } from "vitest";
-import { paramsFrom, withdraw } from "../reflections.js";
+import { paramsFrom, withdraw } from "../../src/reflections.js";
 import { egressFinding, learn } from "./fixtures.js";
 
 describe("withdraw", () => {

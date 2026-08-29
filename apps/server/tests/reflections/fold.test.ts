@@ -1,7 +1,7 @@
 // paramsFrom: the only route by which memory reaches a run.
 
 import { describe, expect, it } from "vitest";
-import { paramsFrom, type Reflection } from "../reflections.js";
+import { paramsFrom, type Reflection } from "../../src/reflections.js";
 import { NOW } from "./fixtures.js";
 
 describe("paramsFrom", () => {

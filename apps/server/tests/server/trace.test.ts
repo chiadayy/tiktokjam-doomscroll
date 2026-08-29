@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { TraceWriter, traceFilePath, type TraceRecord } from "./trace.js";
+import { TraceWriter, traceFilePath, type TraceRecord } from "../../src/trace.js";
 
 async function newTraceFile(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), "trace-test-"));
@@ -125,7 +125,7 @@ describe("failure handling", () => {
 
 describe("carrying the trace out of a failed run", () => {
   it("attaches the pointer to the error and reads it back", async () => {
-    const { attachTrace, traceOf } = await import("./errors.js");
+    const { attachTrace, traceOf } = await import("../../src/errors.js");
 
     const summary = { path: "/tmp/run.jsonl", events: 12, bytes: 900, truncated: false };
     const failure = attachTrace(new Error("container died"), summary);
@@ -137,7 +137,7 @@ describe("carrying the trace out of a failed run", () => {
   });
 
   it("returns null for errors that carry no trace", async () => {
-    const { traceOf } = await import("./errors.js");
+    const { traceOf } = await import("../../src/errors.js");
     expect(traceOf(new Error("plain"))).toBe(null);
     expect(traceOf(null)).toBe(null);
     expect(traceOf("not an error")).toBe(null);
@@ -149,7 +149,7 @@ describe("capturing both directions", () => {
     // This was a real bug: the observer was wired into the send path only, so
     // every trace contained our four handshake messages and nothing the agent
     // said back. Runs looked empty even when they had succeeded.
-    const { JsonRpcConnection } = await import("./codex-app-server-client.js");
+    const { JsonRpcConnection } = await import("../../src/codex-app-server-client.js");
     const { PassThrough } = await import("node:stream");
 
     const toClient = new PassThrough();

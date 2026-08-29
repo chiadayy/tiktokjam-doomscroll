@@ -2,7 +2,7 @@
 // that outlives the run that produced it.
 
 import { describe, expect, it } from "vitest";
-import type { Finding } from "../checks.js";
+import type { Finding } from "../../src/checks.js";
 import { egressFinding, learn } from "./fixtures.js";
 
 describe("eligibility", () => {

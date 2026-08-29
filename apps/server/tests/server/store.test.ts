@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { JsonStore } from "./store.js";
+import { JsonStore } from "../../src/store.js";
 
 const temporaryDirectories: string[] = [];
 
