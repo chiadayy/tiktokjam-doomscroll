@@ -14,6 +14,7 @@
 // carries either verdict onto the wire.
 
 import type { JsonRpcConnection } from "./codex-app-server-client.js";
+import type { AskForApproval } from "./codex-protocol.js";
 import {
   commandsOf,
   fileChangesOf,
@@ -59,6 +60,14 @@ export interface TurnOptions {
   onViolation?: "interrupt" | "steer-only";
   /** Optional task-aware semantic policy. Separate from deterministic checks. */
   intentController?: IntentController;
+  /** Pinned-runtime approval behavior to apply to this thread and turn. */
+  approvalPolicy?: AskForApproval;
+  /**
+   * The Runtime was configured to make workspace writes approval-gated.
+   * This enables only a narrow audit backstop; it is not a substitute for the
+   * OS/runtime boundary.
+   */
+  semanticEnforcement?: boolean;
 }
 
 export interface TurnOutcome {
@@ -77,6 +86,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   const records = options.trace ?? [];
   const onViolation = options.onViolation ?? "interrupt";
   const intentController = options.intentController;
+  const semanticEnforcement = options.semanticEnforcement ?? false;
 
   // Collected as notifications arrive.
   const messages: string[] = [];
@@ -93,6 +103,10 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   // Notification callbacks cannot await model calls. Chain them explicitly so
   // an approval waits for every earlier reasoning assessment in trace order.
   let semanticQueue: Promise<void> = Promise.resolve();
+  // A requestApproval means Codex is paused. For file changes, v0.111.0 emits
+  // item/started before this request, so completion is the first reliable
+  // point at which a missing gate can be diagnosed without false positives.
+  const approvalGates = new Set<string>();
 
   // A violation fires once per turn (coarser key); anything lower is per record.
   const keyOf = (finding: Finding): string =>
@@ -190,6 +204,11 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     );
   }
 
+  function markApprovalGate(params: Record<string, unknown>): void {
+    const itemId = typeof params.itemId === "string" ? params.itemId : null;
+    if (semanticEnforcement && itemId !== null) approvalGates.add(itemId);
+  }
+
   function decideWithoutSemantic(params: Record<string, unknown>, id: number | string): void {
     const violation = deterministicViolationForApproval(params);
     if (violation === undefined) {
@@ -253,6 +272,9 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     params: Record<string, unknown>,
     id: number | string,
   ): void | Promise<void> {
+    // This request is the real pre-execution barrier. The Runtime waits for
+    // our reply, unlike an item/started or item/completed notification.
+    markApprovalGate(params);
     return intentController === undefined
       ? decideWithoutSemantic(params, id)
       : decideWithSemantic("command", params, id);
@@ -262,6 +284,9 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     params: Record<string, unknown>,
     id: number | string,
   ): void | Promise<void> {
+    // File changes are explicitly paused at this request under semantic
+    // enforcement, even though their item/started notification comes first.
+    markApprovalGate(params);
     return intentController === undefined
       ? decideWithoutSemantic(params, id)
       : decideWithSemantic("file_change", params, id);
@@ -282,6 +307,26 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
 
     const item = params.item as Record<string, unknown> | undefined;
     if (item === undefined) return;
+    if (semanticEnforcement && item.type === "fileChange") {
+      const itemId = typeof item.id === "string" ? item.id : null;
+      if (itemId !== null && !approvalGates.has(itemId)) {
+        // This does not claim to undo an already-completed mutation. It makes
+        // a broken Runtime/protocol assumption visible and stops the turn
+        // before it can perform more work.
+        findings.push({
+          check: "semantic-enforcement",
+          code: "ungated-file-change",
+          severity: "violation",
+          seq: latestItemSeq(records, item),
+          evidence: [latestItemSeq(records, item)],
+          message:
+            "Semantic enforcement expected this file change to wait for item/fileChange/requestApproval, but it completed without that gate. The turn was interrupted; any completed change requires audit or rollback.",
+          metadata: { checkpoint: "file_change", controllerDecision: "interrupt" },
+        });
+        intervened = true;
+        sendInterrupt();
+      }
+    }
     if (item.type === "reasoning") {
       const seq = latestItemSeq(records, item);
       const cheapIntentSignal = deterministic.some(
@@ -325,6 +370,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     threadId: threadId,
     input: [{ type: "text", text: options.prompt }],
     sandboxPolicy: buildSandboxPolicy(options.sandboxMode, options.denyNetwork ?? false),
+    ...(options.approvalPolicy === undefined ? {} : { approvalPolicy: options.approvalPolicy }),
   })) as { turn?: { id?: string } };
   // turn/steer refuses to act on anything but the currently live turn.
   turnId = startedTurn?.turn?.id ?? null;
@@ -470,6 +516,7 @@ async function openThread(rpc: JsonRpcConnection, options: TurnOptions): Promise
   const params: Record<string, unknown> = {
     cwd: "/workspace",
     sandbox: options.sandboxMode,
+    ...(options.approvalPolicy === undefined ? {} : { approvalPolicy: options.approvalPolicy }),
   };
   if (options.threadId !== null) {
     params.threadId = options.threadId;

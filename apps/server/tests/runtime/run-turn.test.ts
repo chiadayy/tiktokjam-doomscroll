@@ -332,4 +332,30 @@ describe("runTurn enforcement", () => {
       .sandboxPolicy;
     expect(policy.networkAccess).toBe(false);
   });
+
+  it("sends the verified on-request policy on both thread and turn", async () => {
+    const rpc = new FakeRpc();
+
+    const turn = runTurn({
+      rpc: rpc.asConnection(),
+      prompt: "x",
+      threadId: null,
+      sandboxMode: "read-only",
+      approvalPolicy: "on-request",
+      trace: [],
+      semanticEnforcement: true,
+      denyNetwork: true,
+    });
+
+    await settle();
+    rpc.fire("turn/completed", {});
+    await turn;
+
+    const threadStart = rpc.sent.find((message) => message.method === "thread/start");
+    const turnStart = rpc.sent.find((message) => message.method === "turn/start");
+    expect((threadStart?.params as { approvalPolicy?: string }).approvalPolicy).toBe("on-request");
+    expect((turnStart?.params as { approvalPolicy?: string }).approvalPolicy).toBe("on-request");
+    expect((turnStart?.params as { sandboxPolicy: { type: string; networkAccess: boolean } })
+      .sandboxPolicy).toEqual(expect.objectContaining({ type: "readOnly", networkAccess: false }));
+  });
 });

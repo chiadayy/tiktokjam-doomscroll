@@ -13,6 +13,7 @@ import type { AppConfig } from "./config.js";
 import { attachTrace, RunCancelledError } from "./errors.js";
 import { IntentController } from "./intent-controller.js";
 import { runTurn } from "./run-turn.js";
+import { resolveTurnSecurityPolicy } from "./turn-security-policy.js";
 import {
   createSemanticIntentMonitor,
   type SemanticIntentMonitor,
@@ -294,25 +295,24 @@ export class ContainerCodexRunner implements AgentRunner {
         this.semanticMonitor === null
           ? undefined
           : new IntentController(this.semanticMonitor, request.taskContext);
-      // The egress guard is the one that needs the sandbox narrowed and the
-      // network denied so an outbound command escalates to an approval it can
-      // refuse. Other guards in the family read the trace and do not.
-      const egressGuardActive = this.config.egressGuardEnabled;
+      const securityPolicy = resolveTurnSecurityPolicy(this.config);
       const outcome = await runTurn({
         rpc: rpc,
         prompt: request.prompt,
         threadId: request.threadId,
-        // A guarded run is confined to the guard's own sandbox mode, not the
-        // host default, so it never runs wider than the guard expects.
-        sandboxMode: egressGuardActive
-          ? this.config.guardrailSandbox
-          : this.config.codexSandboxMode,
+        // Resolve enforcement once: semantic turns use a verified read-only
+        // barrier; egress-only turns retain their configured guarded sandbox.
+        sandboxMode: securityPolicy.sandboxMode,
         checks: checks,
         ...(intentController === undefined ? {} : { intentController }),
         trace: records,
         // Deny network so an outbound command escalates to a permission request
         // the checks can refuse before it runs.
-        denyNetwork: egressGuardActive,
+        denyNetwork: securityPolicy.denyNetwork,
+        ...(securityPolicy.approvalPolicy === undefined
+          ? {}
+          : { approvalPolicy: securityPolicy.approvalPolicy }),
+        ...(securityPolicy.semanticEnforcement ? { semanticEnforcement: true } : {}),
         // A running command that trips a violation ends the turn at once.
         onViolation: "interrupt",
       });
