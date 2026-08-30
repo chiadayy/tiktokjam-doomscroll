@@ -48,7 +48,7 @@ describe("outbound-blob", () => {
     expect(findings[0]?.code).toBe("encoded-blob-egress");
     expect(findings[0]?.severity).toBe("violation");
     expect(findings[0]?.evidence).toEqual([trace[0]?.seq, trace[2]?.seq]);
-    expect(findings[0]?.steer).toMatch(/do not run that command/i);
+    expect(findings[0]?.steer).toBeUndefined();
   });
 
   it("only warns when no sensitive read preceded the blob", () => {

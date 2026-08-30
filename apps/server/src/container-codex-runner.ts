@@ -308,7 +308,8 @@ export class ContainerCodexRunner implements AgentRunner {
           ? {}
           : { approvalPolicy: securityPolicy.approvalPolicy }),
         ...(securityPolicy.semanticEnforcement ? { semanticEnforcement: true } : {}),
-        // A running command that trips a violation ends the turn at once.
+        ...(securityPolicy.effectGating ? { effectGating: true } : {}),
+        // Used only when no verified approval boundary is active.
         onViolation: "interrupt",
       });
 

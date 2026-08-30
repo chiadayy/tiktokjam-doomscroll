@@ -47,7 +47,7 @@ describe("sensitive-egress", () => {
     expect(findings[0]?.code).toBe("sensitive-egress");
     expect(findings[0]?.severity).toBe("violation");
     expect(findings[0]?.message).toContain("collect.example");
-    expect(findings[0]?.steer).toMatch(/do not run that command/i);
+    expect(findings[0]?.steer).toBeUndefined();
     // Evidence points at the read and the egress, in order.
     expect(findings[0]?.evidence).toEqual([trace[0]?.seq, trace[2]?.seq]);
   });

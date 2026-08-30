@@ -12,10 +12,11 @@ describe("turn security policy", () => {
       sandboxMode: "danger-full-access",
       denyNetwork: false,
       semanticEnforcement: false,
+      effectGating: false,
     });
   });
 
-  it("preserves the egress guard's configured sandbox and network denial", () => {
+  it("uses the verified effect gate for deterministic egress enforcement", () => {
     const policy = resolveTurnSecurityPolicy(
       loadConfig({
         NODE_ENV: "test",
@@ -25,10 +26,11 @@ describe("turn security policy", () => {
     );
 
     expect(policy).toEqual({
-      sandboxMode: "workspace-write",
+      sandboxMode: "read-only",
       denyNetwork: true,
       approvalPolicy: "on-request",
       semanticEnforcement: false,
+      effectGating: true,
     });
   });
 
@@ -47,6 +49,7 @@ describe("turn security policy", () => {
       denyNetwork: true,
       approvalPolicy: "on-request",
       semanticEnforcement: true,
+      effectGating: true,
     });
   });
 });

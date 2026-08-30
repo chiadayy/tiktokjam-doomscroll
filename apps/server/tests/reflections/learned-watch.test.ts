@@ -63,7 +63,7 @@ describe("watched files", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]?.code).toBe("watched-source-read");
     expect(findings[0]?.severity).toBe("warn");
-    expect(findings[0]?.steer).toBeDefined();
+    expect(findings[0]?.requestSteer).toBe(true);
   });
 
   it("catches a variant that shares nothing with the original command", () => {
