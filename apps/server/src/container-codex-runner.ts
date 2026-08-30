@@ -288,16 +288,12 @@ export class ContainerCodexRunner implements AgentRunner {
     timeout.unref();
 
     try {
-<<<<<<< HEAD
-      const checks = buildGuardChecks(this.config);
+      const reflections = request.reflections ?? [];
+      const checks = buildGuardChecks(this.config, reflections);
       const intentController =
         this.semanticMonitor === null
           ? undefined
           : new IntentController(this.semanticMonitor, request.taskContext);
-=======
-      const reflections = request.reflections ?? [];
-      const checks = buildGuardChecks(this.config, reflections);
->>>>>>> origin/main
       // The egress guard is the one that needs the sandbox narrowed and the
       // network denied so an outbound command escalates to an approval it can
       // refuse. Other guards in the family read the trace and do not.

@@ -52,10 +52,8 @@ export interface Finding {
    * retry the same thing.
    */
   steer?: string;
-<<<<<<< HEAD
   /** Compact derived audit data. Never put raw secrets or model chain-of-thought here. */
   metadata?: Record<string, unknown>;
-=======
   /**
    * Machine-extracted values describing what the agent was about to do, for the
    * memory layer to fold into the next run's check options (see reflections.ts).
@@ -75,7 +73,6 @@ export interface Finding {
    * than by convention.
    */
   facts?: Record<string, string>;
->>>>>>> origin/main
 }
 
 export interface Check {

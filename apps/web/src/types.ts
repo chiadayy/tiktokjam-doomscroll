@@ -34,6 +34,8 @@ export interface Finding {
   evidence: number[];
   message: string;
   steer?: string;
+  /** Compact derived audit data emitted by semantic guard findings. */
+  metadata?: Record<string, unknown>;
   facts?: Record<string, string>;
 }
 
@@ -59,21 +61,9 @@ export interface AgentRun {
     outputTokens?: number;
   } | null;
   trace: { path: string; events: number; bytes: number; truncated: boolean } | null;
-<<<<<<< HEAD
-  findings?: Array<{
-    check: string;
-    code: string;
-    severity: "info" | "warn" | "violation";
-    seq: number;
-    evidence: number[];
-    message: string;
-    metadata?: Record<string, unknown>;
-  }>;
-=======
   /** What the guards reported for this run. */
   findings?: Finding[];
   /** True when a guard refused an action or ended the run. */
->>>>>>> origin/main
   intervened?: boolean;
   createdAt: string;
 }

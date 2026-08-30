@@ -75,7 +75,6 @@ restriction buys everything else:
 See [`apps/server/src/checks.ts`](apps/server/src/checks.ts) — read it first if
 you are adding a check.
 
-<<<<<<< HEAD
 - **Semantic intent guard** (`GUARDRAIL_SEMANTIC_ENABLED`). A separate,
   tool-less model compares meaningful trajectory checkpoints with the trusted
   user prompt and Agent instructions. Reasoning can raise risk and trigger a
@@ -84,9 +83,8 @@ you are adding a check.
   the turn. Existing deterministic violations always take precedence.
 
 See [Guard coverage and limitations](#guard-coverage-and-limitations).
-=======
+
 ### Enforcement in the runtime path, not the UI
->>>>>>> origin/main
 
 Findings are acted on in [`run-turn.ts`](apps/server/src/run-turn.ts):
 
@@ -424,15 +422,10 @@ scripts/reset-agent-thread.sh --forget    # also drop what it learned
 | `GUARDRAIL_SENSITIVE_MARKERS` | built-in list | Comma-separated path substrings that mark a file as secret. **Overrides** the default list when set. |
 | `GUARDRAIL_SANDBOX` | `workspace-write` | Sandbox mode a guarded turn is pinned to. Keep `workspace-write` so network denial and approval escalation stay meaningful. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
-<<<<<<< HEAD
-| `GUARDRAIL_INTENT_ENABLED` | `false` | Check the Agent's reasoning narration each turn for a stated intent to cross a line. Warn-only; never interrupts a turn. |
 | `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review at completed reasoning and selected consequential action checkpoints. Container Runtime only. |
 | `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional model override for semantic review. |
 | `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required high-impact reviews fail closed; reasoning-only reviews fail open with a warning. |
-| `LOCAL_POC_DATA_ROOT` | Platform-specific | Local metadata, workspace, and session directory. |
-=======
 | `LOCAL_POC_DATA_ROOT` | platform-specific | Local metadata / workspace / session directory for `npm run poc`. |
->>>>>>> origin/main
 
 The default sensitive markers: `.env`, `id_rsa`, `id_ed25519`, `.pem`, `.ssh/`,
 `.aws/credentials`, `credentials.json`, `secrets`, `.npmrc`,
@@ -511,7 +504,6 @@ verbatim in a later command. Every finding carries a fingerprint
   user-facing message text. An Agent that acts without narrating, or a runtime
   that emits no reasoning items, gives it nothing to read.
 
-<<<<<<< HEAD
 ### Semantic intent guard
 
 The semantic guard is deliberately outside the deterministic `Check`
@@ -535,10 +527,7 @@ approval cannot be guaranteed to be stopped before application. Full rollback,
 cross-turn semantic memory, final-response DLP, and completion verification are
 out of scope for this version.
 
-## Validation
-=======
 ### Egress-intent guard
->>>>>>> origin/main
 
 - **Needs both signals.** It fires only when a stated exfiltration intent and a
   later egress command line up in the same run. It adds no coverage over
