@@ -1,16 +1,11 @@
-// What this Agent has been stopped for before, and what the guards reported on
-// the run you are looking at.
-//
-// Two panels, because they answer two different questions. "What has it learned"
-// is a property of the Agent and survives every run. "What happened this time"
-// is a property of one run. Seeing them side by side is what makes the second
-// run legible: a warning fired here *because* of something in the panel above.
+// What this Agent has been stopped for before. This is Agent-level state, so it
+// lives by the Agent header rather than inside an individual conversation.
 //
 // A reflection is stored as values, never as prose, so this renders fields
 // rather than sentences. That is not a display choice — nothing the model wrote
 // is kept, so there is no sentence to show.
 
-import type { Finding, Reflection } from "./types";
+import type { Reflection } from "./types";
 
 /** Plain-language description of what a reflection watches. */
 function subjectOf(reflection: Reflection): { label: string; value: string } {
@@ -36,20 +31,16 @@ const WHEN: Record<string, string> = {
 
 export function ReflectionList({ reflections }: { reflections: Reflection[] }) {
   return (
-    <section className="reflections">
-      <header className="reflections-head">
-        <strong>What this Agent has learned</strong>
-        <span className="reflections-count">
-          {reflections.length === 0
-            ? "nothing yet"
-            : `${reflections.length} rule${reflections.length === 1 ? "" : "s"}`}
-        </span>
-      </header>
+    <details className="reflections safety-memory">
+      <summary>
+        <strong>Safety memory</strong>
+        <span aria-hidden="true">·</span>
+        <span>{reflections.length}</span>
+      </summary>
 
       {reflections.length === 0 ? (
         <p className="reflections-empty">
-          This Agent has not been stopped for anything yet. Rules appear here after a guard
-          catches something, and apply to every later run — including in a fresh container.
+          No persistent safety lessons yet.
         </p>
       ) : (
         <ul className="reflection-items">
@@ -111,41 +102,6 @@ export function ReflectionList({ reflections }: { reflections: Reflection[] }) {
         Stored as guard settings, not as text in the prompt — so they cost no tokens and the
         Agent is never asked to agree to them.
       </p>
-    </section>
-  );
-}
-
-const SEVERITY_LABEL: Record<Finding["severity"], string> = {
-  violation: "refused",
-  warn: "warning",
-  info: "noted",
-};
-
-export function FindingList({ findings }: { findings: Finding[] }) {
-  if (findings.length === 0) return null;
-
-  return (
-    <section className="findings">
-      <header className="findings-head">
-        <strong>Guards on this run</strong>
-      </header>
-      <ul className="finding-items">
-        {findings.map((finding) => (
-          <li
-            className={`finding-item finding-${finding.severity}`}
-            key={`${finding.check}:${finding.code}:${finding.seq}`}
-          >
-            <div className="finding-top">
-              <span className="finding-badge">{SEVERITY_LABEL[finding.severity]}</span>
-              <code>{finding.code}</code>
-              {finding.check === "learned-watch" && (
-                <span className="finding-learned">from an earlier run</span>
-              )}
-            </div>
-            <p className="finding-message">{finding.message}</p>
-          </li>
-        ))}
-      </ul>
-    </section>
+    </details>
   );
 }

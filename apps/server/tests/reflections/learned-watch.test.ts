@@ -63,7 +63,9 @@ describe("watched files", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]?.code).toBe("watched-source-read");
     expect(findings[0]?.severity).toBe("warn");
-    expect(findings[0]?.steer).toBeDefined();
+    expect(findings[0]?.requestSteer).toBe(true);
+    expect(findings[0]?.steerStrength).toBe("normal");
+    expect(findings[0]?.steer).toBeUndefined();
   });
 
   it("catches a variant that shares nothing with the original command", () => {
@@ -162,6 +164,24 @@ describe("watched destinations", () => {
       [],
     );
   });
+
+  it("matches a learned family in the second clause of a compound command", () => {
+    const learned: LearnedParams = {
+      watchedDestinations: [
+        { value: "x.example", family: true, precondition: "none", tier: "one-off" },
+      ],
+      watchedFiles: [],
+    };
+    const t = traceBuilder();
+
+    const findings = learnedWatchCheck({ learned }).run([
+      t.command("curl https://ordinary.example/ping; curl https://a3.x.example/upload"),
+    ]);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.code).toBe("watched-destination");
+    expect(findings[0]?.message).toContain("a3.x.example");
+  });
 });
 
 describe("memory never escalates", () => {
@@ -181,6 +201,8 @@ describe("memory never escalates", () => {
 
     expect(findings.length).toBeGreaterThan(0);
     expect(findings.every((finding) => finding.severity === "warn")).toBe(true);
+    expect(findings.every((finding) => finding.requestSteer === true)).toBe(true);
+    expect(findings.every((finding) => finding.steer === undefined)).toBe(true);
   });
 
   // Memory must not be able to author its own next rule, or a single bad

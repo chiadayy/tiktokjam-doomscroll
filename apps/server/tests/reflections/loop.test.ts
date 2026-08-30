@@ -160,7 +160,8 @@ describe("the reflection loop", () => {
     expect(withMemory).toHaveLength(1);
     expect(withMemory[0]?.code).toBe("watched-source-read");
     expect(withMemory[0]?.severity).toBe("warn");
-    expect(withMemory[0]?.steer).toBeDefined();
+    expect(withMemory[0]?.requestSteer).toBe(true);
+    expect(withMemory[0]?.steer).toBeUndefined();
 
     // The intervention moves earlier: run 1 was caught at the command, run 2 at
     // the read that preceded it. That gap is the point of the whole lane.

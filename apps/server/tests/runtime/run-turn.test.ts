@@ -366,9 +366,8 @@ describe("runTurn enforcement", () => {
 // ---------------------------------------------------------------------------
 //
 // Everything below `violation` used to be recorded and dropped, which made the
-// whole reflection layer inert: learned-watch is warn-only by design, so the
-// steer it writes was never delivered. Four captured runs contained zero
-// turn/steer messages. These pin the fix.
+// whole reflection layer inert: learned-watch is warn-only by design, so its
+// centralized steer request must still be delivered. These pin that contract.
 
 /** A check that emits one finding, so a test can choose its severity and steer. */
 function fixedCheck(finding: Finding): Check {
@@ -384,6 +383,19 @@ function warn(seq: number, steer?: string): Finding {
     evidence: [seq],
     message: `read at ${seq}`,
     ...(steer === undefined ? {} : { steer }),
+  };
+}
+
+function learnedWarn(seq: number, steerStrength: "normal" | "firm"): Finding {
+  return {
+    check: "learned-watch",
+    code: "watched-source-read",
+    severity: "warn",
+    seq,
+    evidence: [seq],
+    message: `read at ${seq}`,
+    requestSteer: true,
+    steerStrength,
   };
 }
 
@@ -428,6 +440,28 @@ describe("runTurn steering on a warn", () => {
     await runWith(rpc, [fixedCheck(warn(1))]);
 
     expect(rpc.sentMethods()).not.toContain("turn/steer");
+  });
+
+  it("uses a normal centralized correction for a one-off learned lesson", async () => {
+    const rpc = new FakeRpc();
+    await runWith(rpc, [fixedCheck(learnedWarn(1, "normal"))]);
+
+    expect(steersFrom(rpc)).toEqual([
+      expect.stringContaining("A prior safety lesson applies here."),
+    ]);
+    expect(steersFrom(rpc)[0]).not.toContain("recurred across independent conversations");
+    expect(rpc.sentMethods()).not.toContain("turn/interrupt");
+  });
+
+  it("uses a firmer centralized correction for a recurring learned lesson", async () => {
+    const rpc = new FakeRpc();
+    await runWith(rpc, [fixedCheck(learnedWarn(1, "firm"))]);
+
+    expect(steersFrom(rpc)[0]).toContain(
+      "This pattern has recurred across independent conversations. Do not repeat or route around it.",
+    );
+    expect(rpc.sentMethods()).not.toContain("turn/interrupt");
+    expect(rpc.replies).toEqual([]);
   });
 
   it("a warn corrects without intervening or ending the turn", async () => {

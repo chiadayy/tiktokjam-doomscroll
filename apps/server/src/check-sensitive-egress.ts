@@ -34,7 +34,13 @@
 // steers and evidence carry a fingerprint (`sk_…123727(28 chars)`) and seqs,
 // never the value itself.
 
-import { commandsOf, readsOf, type Check, type Finding } from "./checks.js";
+import {
+  commandsOf,
+  readsOf,
+  type Check,
+  type CommandEvent,
+  type Finding,
+} from "./checks.js";
 import type { TraceRecord } from "./trace.js";
 // The credential shapes this guard gates on, and the fingerprint it reports
 // them with, both live in ./redaction. The direction of that import is
@@ -204,6 +210,80 @@ export function extractDestination(command: string): string | null {
   if (dns?.[1] !== undefined) return dns[1];
 
   return null;
+}
+
+export interface EgressClause {
+  text: string;
+  verdict: EgressVerdict;
+  destination: string | null;
+}
+
+/**
+ * The conservative command boundaries shared by egress-aware checks. Runtime
+ * structured actions take precedence; otherwise recognize only obvious shell
+ * separators, not general shell syntax.
+ */
+export function egressClauses(command: CommandEvent, secretWasRead: boolean): EgressClause[] {
+  return commandClauses(command)
+    .map((text) => ({ text, verdict: classifyEgress(text, secretWasRead) }))
+    .filter(({ verdict }) => verdict.egress)
+    .map(({ text, verdict }) => ({ text, verdict, destination: extractDestination(text) }));
+}
+
+function commandClauses(command: CommandEvent): string[] {
+  const structured = command.actions
+    .map((entry) =>
+      entry !== null && typeof entry === "object"
+        ? (entry as Record<string, unknown>).command
+        : undefined,
+    )
+    .filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "")
+    .map((entry) => entry.trim());
+  // Multiple Runtime actions are already trustworthy boundaries. A single
+  // action can still contain a compound shell command, so split it below.
+  if (new Set(structured).size > 1) return [...new Set(structured)];
+  return splitObviousShellClauses(command.command);
+}
+
+function splitObviousShellClauses(command: string): string[] {
+  const trimmed = command.trim();
+  const wrapper = /^(?:\/bin\/)?(?:ba|z)?sh\s+-lc\s+(['"])([\s\S]*)\1$/.exec(trimmed);
+  const body = wrapper?.[2] ?? trimmed;
+  const clauses: string[] = [];
+  let start = 0;
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+
+  const push = (end: number): void => {
+    const clause = body.slice(start, end).trim();
+    if (clause !== "") clauses.push(clause);
+  };
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index]!;
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = quote === null ? char : quote === char ? null : quote;
+      continue;
+    }
+    if (quote !== null) continue;
+    const pair = body.slice(index, index + 2);
+    const separatorLength =
+      pair === "&&" || pair === "||" ? 2 : char === ";" || char === "\n" ? 1 : 0;
+    if (separatorLength === 0) continue;
+    push(index);
+    index += separatorLength - 1;
+    start = index + 1;
+  }
+  if (quote !== null || escaped) return [body];
+  push(body.length);
+  return clauses.length > 0 ? clauses : [body];
 }
 
 /**

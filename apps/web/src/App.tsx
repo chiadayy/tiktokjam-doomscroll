@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, setAuthToken } from "./api";
+import { MessageContent } from "./MessageContent";
 import type { Agent, AgentRun, Message, SystemInfo } from "./types";
-import { FindingList, ReflectionList } from "./Reflections";
+import { ReflectionList } from "./Reflections";
 import { Trajectory } from "./Trajectory";
 import { parseTrace, toSteps, type TraceRecord, type TraceStep } from "./trace";
 
@@ -65,6 +66,28 @@ export default function App() {
     () => agents.find((agent) => agent.id === selectedId) ?? null,
     [agents, selectedId],
   );
+  const liveRun = activeRun !== null && ["queued", "running"].includes(activeRun.status);
+  const safetyMemoryUpdated =
+    activeRun !== null &&
+    (selected?.reflections ?? []).some((reflection) => reflection.sightings.includes(activeRun.id));
+
+  const activityForActiveRun = () =>
+    activeRun === null ? null : (
+      <>
+        <Trajectory
+          key={activeRun.id}
+          steps={steps}
+          live={liveRun}
+          records={traceRecords}
+          status={activeRun.status}
+          findings={activeRun.findings ?? []}
+          redactions={traceRedactions}
+        />
+        {safetyMemoryUpdated && (
+          <div className="safety-memory-updated">🧠 Safety memory updated</div>
+        )}
+      </>
+    );
 
   const refreshAgents = useCallback(async () => {
     const { agents: next } = await api.listAgents();
@@ -424,6 +447,7 @@ export default function App() {
                   <StatusPill status={selected.status} />
                 </div>
                 <p>{selected.description || "A Codex coding Agent in an isolated workspace."}</p>
+                <ReflectionList reflections={selected.reflections ?? []} />
               </div>
               <div className="header-actions">
                 <button
@@ -534,41 +558,27 @@ export default function App() {
                   </div>
                 ) : (
                   messages.map((message) => (
-                    <article className={"message message-" + message.role} key={message.id}>
-                      <div className="message-meta">
-                        <strong>{message.role === "user" ? "You" : selected.name}</strong>
-                        <span>{formatTime(message.createdAt)}</span>
-                      </div>
-                      <div className="message-body">{message.content}</div>
-                    </article>
+                    <Fragment key={message.id}>
+                      {message.role === "assistant" && message.runId === activeRun?.id &&
+                        activityForActiveRun()}
+                      <article className={"message message-" + message.role}>
+                        <div className="message-meta">
+                          <strong>{message.role === "user" ? "You" : selected.name}</strong>
+                          <span>{formatTime(message.createdAt)}</span>
+                        </div>
+                        <MessageContent
+                          content={message.content}
+                          rich={message.role === "assistant"}
+                        />
+                      </article>
+                    </Fragment>
                   ))
                 )}
-                {activeRun && ["queued", "running"].includes(activeRun.status) && (
-                  <article className="message message-assistant thinking">
-                    <div className="message-meta">
-                      <strong>{selected.name}</strong>
-                      <span>working in the Agent workspace</span>
-                    </div>
-                    <div className="thinking-row">
-                      <Spinner />
-                      Codex is reading, editing, or running commands…
-                    </div>
-                  </article>
-                )}
-                <Trajectory
-                  steps={steps}
-                  live={activeRun !== null && ["queued", "running"].includes(activeRun.status)}
-                  records={traceRecords}
-                  status={activeRun?.status ?? null}
-                  findings={activeRun?.findings ?? []}
-                  redactions={traceRedactions}
-                />
-
-                {activeRun?.findings !== undefined && (
-                  <FindingList findings={activeRun.findings} />
-                )}
-
-                {selected !== null && <ReflectionList reflections={selected.reflections ?? []} />}
+                {activeRun !== null &&
+                  !messages.some(
+                    (message) => message.role === "assistant" && message.runId === activeRun.id,
+                  ) &&
+                  activityForActiveRun()}
 
                 {activeRun?.status === "failed" && (
                   <article className="run-error">

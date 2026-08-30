@@ -24,6 +24,7 @@ import {
 } from "./checks.js";
 import type { IntentController, IntentControllerResult } from "./intent-controller.js";
 import type { SemanticProposedAction } from "./semantic-intent-monitor.js";
+import { steerForFinding } from "./steering-policy.js";
 import type { TraceRecord } from "./trace.js";
 import type { RunUsage } from "./types.js";
 
@@ -162,7 +163,8 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
       // documents ("leave it unset to record the finding without intervening"),
       // rather than gating on severity as this did before.
       if (finding.severity !== "violation") {
-        if (enforce && finding.steer !== undefined) sendSteerWithinBudget(finding.steer);
+        const steer = steerForFinding(finding);
+        if (enforce && steer !== undefined) sendSteerWithinBudget(steer);
         continue;
       }
 

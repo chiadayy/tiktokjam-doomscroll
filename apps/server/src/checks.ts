@@ -25,6 +25,7 @@ import type { TraceRecord } from "./trace.js";
 // ---------------------------------------------------------------------------
 
 export type Severity = "info" | "warn" | "violation";
+export type SteerStrength = "normal" | "firm";
 
 export interface Finding {
   /** Name of the check that produced this. */
@@ -52,6 +53,13 @@ export interface Finding {
    * retry the same thing.
    */
   steer?: string;
+  /**
+   * Ask the centralized steering policy to correct the agent. Unlike `steer`,
+   * this carries no detector-authored text.
+   */
+  requestSteer?: boolean;
+  /** Tone for a centralized correction when `requestSteer` is set. */
+  steerStrength?: SteerStrength;
   /** Compact derived audit data. Never put raw secrets or model chain-of-thought here. */
   metadata?: Record<string, unknown>;
   /**
