@@ -21,7 +21,9 @@ describe("paramsFrom", () => {
 
     expect(Object.keys(params).sort()).toEqual(["watchedDestinations", "watchedFiles"]);
     expect(params.watchedDestinations).toEqual([
-      { value: "collect.example", precondition: "sensitive-read" },
+      // Fixtures predate thread tracking, so tierOf reads them as recurring —
+      // an upgrade must never demote what an Agent already learned.
+      { value: "collect.example", precondition: "sensitive-read", tier: "recurring" },
     ]);
   });
 
@@ -46,7 +48,7 @@ describe("paramsFrom", () => {
     ];
 
     expect(paramsFrom(reflections).watchedFiles).toEqual([
-      { value: "/workspace/deploy-helper.md", precondition: "untrusted-source-read" },
+      { value: "/workspace/deploy-helper.md", precondition: "untrusted-source-read", tier: "recurring" },
     ]);
   });
 
