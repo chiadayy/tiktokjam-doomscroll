@@ -22,6 +22,12 @@ export interface Reflection {
   facts: Record<string, string>;
   /** Runs that produced it, oldest first. */
   sightings: string[];
+  /**
+   * Conversations it was seen in. Two or more is the stronger signal — the second
+   * conversation knew nothing of the first. Absent on records written before this
+   * was tracked.
+   */
+  threads?: string[];
   firstSeenAt: string;
   lastSeenAt: string;
 }
