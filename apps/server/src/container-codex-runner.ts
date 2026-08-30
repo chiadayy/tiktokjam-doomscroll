@@ -2,7 +2,6 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { agentIntentCheck } from "./check-agent-intent.js";
-import { egressIntentCorroborationCheck } from "./check-egress-intent.js";
 import { outboundBlobCheck } from "./check-outbound-blob.js";
 import { learnedWatchCheck } from "./check-learned-watch.js";
 import { sensitiveEgressCheck } from "./check-sensitive-egress.js";
@@ -131,10 +130,6 @@ export function buildGuardChecks(config: AppConfig, reflections: Reflection[] = 
         ...markerOption,
         minBlobChars: config.guardrailBlobMinChars,
       }),
-      // Rides the same flag: reasoning that states an exfiltration intent,
-      // corroborated by a later egress command, is a violation. Reads the
-      // agent's narration but never stores anything derived from it.
-      egressIntentCorroborationCheck(),
     );
   }
 

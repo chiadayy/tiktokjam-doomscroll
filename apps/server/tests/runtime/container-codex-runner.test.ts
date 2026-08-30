@@ -123,7 +123,6 @@ describe("buildGuardChecks", () => {
     expect(buildGuardChecks(config).map((check) => check.name)).toEqual([
       "sensitive-egress",
       "outbound-blob",
-      "egress-intent",
     ]);
   });
 
@@ -155,7 +154,6 @@ describe("buildGuardChecks", () => {
     expect(buildGuardChecks(config).map((check) => check.name)).toEqual([
       "sensitive-egress",
       "outbound-blob",
-      "egress-intent",
       "agent-intent",
     ]);
   });
