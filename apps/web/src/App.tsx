@@ -50,6 +50,7 @@ export default function App() {
   const [activeRun, setActiveRun] = useState<AgentRun | null>(null);
   const [steps, setSteps] = useState<TraceStep[]>([]);
   const [traceRecords, setTraceRecords] = useState<TraceRecord[]>([]);
+  const [traceRedactions, setTraceRedactions] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
@@ -211,12 +212,13 @@ export default function App() {
   // The trace file is appended as the run happens, so reading it on every poll
   // makes steps appear one by one rather than all at the end.
   const refreshTrace = async (runId: string, agentId: string) => {
-    const text = await api.trace(runId);
-    if (text === null) return;
+    const trace = await api.trace(runId);
+    if (trace === null) return;
     if (selectedIdRef.current !== agentId) return;
-    const records = parseTrace(text);
+    const records = parseTrace(trace.text);
     setTraceRecords(records);
     setSteps(toSteps(records));
+    setTraceRedactions(trace.redactions);
   };
 
   const pollRun = async (runId: string, agentId: string) => {
@@ -559,6 +561,7 @@ export default function App() {
                   records={traceRecords}
                   status={activeRun?.status ?? null}
                   findings={activeRun?.findings ?? []}
+                  redactions={traceRedactions}
                 />
 
                 {activeRun?.findings !== undefined && (

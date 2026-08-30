@@ -42,9 +42,21 @@ export interface TrajectoryProps {
   /** Run status, so the empty state can explain itself. */
   status: string | null;
   findings: NonNullable<AgentRun["findings"]>;
+  /**
+   * How many values the server replaced with a fingerprint on the way out,
+   * from the `x-redactions` response header. Zero when nothing was altered.
+   */
+  redactions: number;
 }
 
-export function Trajectory({ steps, records, live, status, findings }: TrajectoryProps) {
+export function Trajectory({
+  steps,
+  records,
+  live,
+  status,
+  findings,
+  redactions,
+}: TrajectoryProps) {
   const [view, setView] = useState<"steps" | "raw">("steps");
   const [showNoise, setShowNoise] = useState(false);
   const [open, setOpen] = useState(true);
@@ -85,6 +97,8 @@ export function Trajectory({ steps, records, live, status, findings }: Trajector
             ? `${steps.length} step${steps.length === 1 ? "" : "s"}${live ? " so far" : ""}`
             : `${records.length} record${records.length === 1 ? "" : "s"}`}
         </span>
+
+        <RedactionNotice count={redactions} />
       </header>
 
       {open &&
@@ -102,6 +116,30 @@ export function Trajectory({ steps, records, live, status, findings }: Trajector
           />
         ))}
     </section>
+  );
+}
+
+/**
+ * Says that what is displayed below is not byte-for-byte what the agent did.
+ *
+ * The wording is "values redacted", never "secrets found", and the difference
+ * is not pedantry. The redactor is tuned for recall, so most of what it
+ * replaces is precautionary — a long base64 run or a hex digest that is
+ * probably harmless. Calling those "secrets" would report a breach on almost
+ * every run and train everyone to ignore the number.
+ */
+function RedactionNotice({ count }: { count: number }) {
+  if (count === 0) return null;
+  return (
+    <span
+      className="trajectory-redactions"
+      title={
+        "Credential-shaped values were replaced with a fingerprint before this " +
+        "trace left the server. The recorded trace on disk is unchanged."
+      }
+    >
+      {count} value{count === 1 ? "" : "s"} redacted
+    </span>
   );
 }
 
