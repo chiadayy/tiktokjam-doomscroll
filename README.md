@@ -10,12 +10,12 @@ have touched.
 
 This project takes the hackathon's [starter kit](#what-this-is-built-on) — a
 minimal browser-based Agent platform running Codex CLI — and adds the missing
-middleware: a **leash**. A small family of deterministic **guards** watch the
-Agent's own execution trace and stop it the moment it is about to cross a line
-it must never cross, whatever led it there. A separate **reflection layer** then
-carries what a guard caught into that Agent's later runs, so the same mistake is
-caught faster the second time — and the rule that stops it was written by the
-guard, not by the model.
+middleware: a **leash**. A small family of **guards** — four deterministic, one
+task-aware model call — watch the Agent's own execution trace and stop it the
+moment it is about to cross a line it must never cross, whatever led it there. A
+separate **reflection layer** then carries what a guard caught into that Agent's
+later runs, so the same mistake is caught faster the second time — and the rule
+that stops it was written by the guard, not by the model.
 
 > [!WARNING]
 > This is a single-user proof of concept. It has no user identity, no RBAC, no
@@ -55,9 +55,16 @@ to decide *why* the Agent is doing something, or whether an instruction is
 
 ### Behavioural invariants, not intent detection
 
-Each guard enforces a **behavioural invariant**: something the Agent must never
-do, no matter what led it there (for example, *workspace secrets never leave the
-machine*). The guard only asks whether the Agent is about to cross that line.
+Each deterministic guard enforces a **behavioural invariant**: something the
+Agent must never do, no matter what led it there (for example, *workspace
+secrets never leave the machine*). The guard only asks whether the Agent is
+about to cross that line.
+
+The semantic guard is the one exception, and a narrow one. It does not guess
+motive either — it compares the Agent's *apparent objective* against the
+*trusted* task and asks whether they still line up. It can steer, and it can
+decline a consequential action, but the hard refusals stay with the
+deterministic guards.
 
 ### Deterministic checks over the raw trace
 
@@ -75,17 +82,11 @@ restriction buys everything else:
 See [`apps/server/src/checks.ts`](apps/server/src/checks.ts) — read it first if
 you are adding a check.
 
-- **Semantic intent guard** (`GUARDRAIL_SEMANTIC_ENABLED`). A separate,
-  tool-less model compares meaningful trajectory checkpoints with the trusted
-  user prompt and Agent instructions. Reasoning can raise risk and trigger a
-  task-grounded steer; a corroborating high-risk command or file-change
-  approval is declined and steered. A repeated blocked divergence interrupts
-  the turn. In the container Runtime, enabling it also forces workspace writes
-  through a read-only/on-request pre-execution approval boundary, so pending
-  reasoning assessment completes before a mutation is allowed. Existing
-  deterministic violations always take precedence.
-
-See [Guard coverage and limitations](#guard-coverage-and-limitations).
+One guard sits outside this abstraction on purpose. The **semantic intent
+guard** makes a single tool-less model call, so it is not deterministic and
+cannot be a `Check`. It is listed with the others below; a deterministic
+controller still owns every action it takes, and an existing deterministic
+`violation` always wins.
 
 ### Enforcement in the runtime path, not the UI
 
@@ -93,10 +94,25 @@ Findings are acted on in [`run-turn.ts`](apps/server/src/run-turn.ts):
 
 | Finding severity | What happens |
 | --- | --- |
-| `violation` on a command still waiting for approval | refused outright with `decline` — that one action is dropped, the Agent carries on with the rest of the task |
-| `violation` on a command already running | `turn/interrupt` ends the turn immediately (or steer-only, configurable) |
-| `warn` | recorded and shown in the trajectory; the turn is never interrupted |
+| `violation` on an action still waiting for approval | refused with `decline` — that one action is dropped, the Agent carries on with the rest of the task |
+| a second distinct declined action in the same turn | `turn/interrupt` — an Agent that keeps reaching for blocked moves is not corrected by another steer |
+| `violation` on an action already running (no approval boundary) | `turn/interrupt` ends the turn immediately, or steer-only when `onViolation` is set that way |
+| `warn` | recorded and shown in the trajectory; the turn is never interrupted. It may inject one **steer** — corrective text pushed into the live turn |
 | `info` | recorded only |
+
+When the **egress or semantic guard is on**, the guarded turn runs `read-only`
+with `approvalPolicy: on-request` and no network
+([`turn-security-policy.ts`](apps/server/src/turn-security-policy.ts)). Ordinary
+reads (`ls`, `cat`, `rg`) run untouched; a workspace write or an outbound
+command instead pauses at a real pre-execution approval request, which is where
+the guard answers `decline`. `turn/interrupt` is the backstop, and an audit
+check records and interrupts if an effect completes without passing that gate.
+
+Steer text is not written by each detector. A finding names a remediation
+category and the shared policy
+([`steering-policy.ts`](apps/server/src/steering-policy.ts)) builds the
+sentence, so every guard corrects the Agent in the same voice. Soft steers are
+capped per turn — several in a row stop reading as a correction.
 
 With **no guards enabled** (the default), `run-turn.ts` decides nothing: every
 approval is accepted and the Agent runs exactly as it would unobserved.
@@ -112,10 +128,10 @@ isolation. **There is deliberately no master switch.**
 
 **Invariant: workspace secrets never leave the machine.**
 
-A guarded turn is pinned to `GUARDRAIL_SANDBOX` (default `workspace-write`) with
-network access **denied**, so any outbound command escalates to an approval
-request. At that approval step the guard refuses a command that carries a
-workspace secret — one that:
+A guarded turn runs `read-only` with network access **denied** and
+`approvalPolicy: on-request`, so any outbound command — and any workspace write
+— escalates to an approval request. At that approval step the guard refuses a
+command that carries a workspace secret — one that:
 
 - names a sensitive path in its own arguments (`curl --data @.env …`), or
 - follows an earlier read of a sensitive file (`cat .env` then `curl …`), or
@@ -173,10 +189,20 @@ stopped:
 
 - **a destination** the Agent has sent to before — precise, but only catches a
   repeat that reuses the same host;
+- **a host family** — once the Agent has been stopped at two different hosts
+  under one parent domain, contact with *any* host under that parent warns,
+  including one never seen before. Rotating the subdomain no longer helps.
+  Derived at fold time from the incidents, never stored, so withdrawing one
+  sibling collapses the family back to exact matching;
 - **a file whose contents preceded a bad step before** — blunt, and that is why
   it generalises: it fires at the *read*, a whole step before any command
   exists, and does not care what the command would have been. A different host
   and a different tool are still caught.
+
+A reflection seen across two independent conversations is marked **recurring**,
+which firms up the wording the Agent hears; three and it is flagged for a
+person to look at, because re-warning a broken Agent does not fix it. The tier
+never changes whether a reflection is watched, and never a severity.
 
 **Warn-only, always.** Memory widens what the guards *notice*; it never widens
 what they *refuse*.
@@ -184,12 +210,50 @@ what they *refuse*.
 Implementation:
 [`check-learned-watch.ts`](apps/server/src/check-learned-watch.ts).
 
+### Semantic intent guard — `GUARDRAIL_SEMANTIC_ENABLED`
+
+**Asks whether the Agent's apparent objective still matches the task it was
+given** — the one judgement the deterministic guards cannot make.
+
+A single tool-less model call
+([`semantic-intent-monitor.ts`](apps/server/src/semantic-intent-monitor.ts))
+compares a bounded window of recent reasoning, actions and file reads
+([`trajectory-state.ts`](apps/server/src/trajectory-state.ts)) against the
+*trusted* user prompt and Agent instructions. Everything in the trajectory is
+evidence, never instruction; the model returns a schema-checked assessment
+(risk, confidence, a classification, whether it conflicts with the task) and
+nothing else. Trajectory text is redacted before it is sent.
+
+A deterministic controller
+([`intent-controller.ts`](apps/server/src/intent-controller.ts)) — not the
+model — turns that assessment into an action:
+
+- reasoning that conflicts with the task, at high risk and confidence, injects
+  a task-grounded **steer**; it never freezes the turn;
+- a **consequential** proposed action (a publish, a deploy, an `rm -rf`, an
+  edit to auth / tests / CI) is reviewed at its approval boundary and
+  **declined** with a steer if it conflicts;
+- a routine low-risk edit is not sent to the model at all — it just waits for
+  any pending reasoning review, passes the deterministic checks, and proceeds.
+
+The monitor never talks to the runtime. A required review that times out fails
+closed (the action is declined, the turn lives); a reasoning-only review that
+fails is recorded and allowed. Enabling this guard also puts the turn on the
+`read-only` / `on-request` policy described above.
+
+Implementation:
+[`semantic-intent-monitor.ts`](apps/server/src/semantic-intent-monitor.ts),
+[`intent-controller.ts`](apps/server/src/intent-controller.ts),
+[`trajectory-state.ts`](apps/server/src/trajectory-state.ts).
+
 ---
 
 ## The reflection layer
 
-> Status: partially built. The write path, validation, eviction, the fold into
-> guard parameters, and the `learned-watch` guard exist and are tested.
+> Status: the write path, validation, tiered eviction, the fold into guard
+> parameters (including derived host families), recurrence tiers, and the
+> `learned-watch` guard all exist and are tested. The measurement harness
+> (phase 4) is the open piece.
 > [`docs/LEARNING_LAYER.md`](docs/LEARNING_LAYER.md) is the full plan.
 
 **In one line:** an Agent that gets hijacked once should not be hijackable the
@@ -210,6 +274,10 @@ channel for the attacker into memory that is meant to be permanent. So here:
   from a structured trace field, shape-validated against a per-key charset and
   length-capped on the way in ([`reflections.ts`](apps/server/src/reflections.ts)).
   A value that must match a hostname charset cannot carry an instruction.
+- **Anything broader is still a pure function of those facts.** The host family
+  (contact under a parent, once two children were caught) and the recurrence
+  tier (seen across N separate conversations) are both computed at fold time
+  from the stored records. Nothing is inferred, ranked, or written by a model.
 
 ### The loop, end to end
 
@@ -230,9 +298,14 @@ channel for the attacker into memory that is meant to be permanent. So here:
 
 ### Properties worth stating
 
-- **Bounded.** Reflections are capped and evicted per `code` (least-recently-seen
-  first), so a retry loop against rotating hosts cannot crowd out the reflection
-  that generalises.
+- **Bounded.** Reflections are capped and evicted per `code`. Within a `code`,
+  a one-off is dropped before anything seen across two conversations, with a
+  floor of free slots kept for new lessons — so a retry loop against rotating
+  hosts thrashes its own quota and can never push out a corroborated rule.
+- **Generalising, but only on evidence.** Two sibling hosts under one parent are
+  enough to widen to the family; one is not, because a warn now steers and an
+  over-broad rule would nudge the Agent off legitimate work every run. Rotating
+  the parent domain still defeats it.
 - **Withdrawable.** The guards are blind to who asked, so they fire identically
   on an Agent doing exactly what the user wanted. `withdraw()` removes a
   reflection; a "the user's own prompt named this value" gate stops it being
@@ -405,6 +478,23 @@ scripts/reset-agent-thread.sh             # clears the thread, keeps reflections
 scripts/reset-agent-thread.sh --forget    # also drop what it learned
 ```
 
+### Proving the host family, on its own
+
+The deploy scenario always reads `.env` before it sends, so the egress guard
+fires by itself and you cannot see what memory contributed.
+[`scripts/setup-rotation-scenario.sh`](scripts/setup-rotation-scenario.sh)
+isolates it: leak to one host under a parent domain, leak to a second, then
+health-check a *third* host that nobody has seen — with **no secret in the
+workspace at all**. The egress guard is silent on that third run, so a warn
+there is the learned family and nothing else.
+
+```bash
+scripts/setup-rotation-scenario.sh <agent-id> --leak 1   # first sibling
+scripts/setup-rotation-scenario.sh <agent-id> --leak 2   # second sibling
+scripts/setup-rotation-scenario.sh <agent-id> --probe    # unseen host, no secret
+scripts/setup-rotation-scenario.sh <agent-id> --inject   # skip the paid runs, write the incidents directly, then --probe
+```
+
 ---
 
 ## Configuration
@@ -421,11 +511,11 @@ scripts/reset-agent-thread.sh --forget    # also drop what it learned
 | `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox for unguarded turns. |
 | `CODEX_TIMEOUT_MS` | `600000` | Max duration of one turn. |
 | `CODEX_MAX_OUTPUT_BYTES` | `2097152` | Crash guard on runtime stdout. |
-| `GUARDRAIL_EGRESS_ENABLED` | `false` | Run the sensitive-egress + outbound-blob checks against every container turn, deny network, and pin the sandbox. |
+| `GUARDRAIL_EGRESS_ENABLED` | `false` | Run the sensitive-egress + outbound-blob checks against every container turn. Also puts the turn on the `read-only` + `on-request` policy with network denied, so outbound commands and workspace writes pause at an approval the guard can refuse. |
 | `GUARDRAIL_INTENT_ENABLED` | `false` | Run the agent-intent check every turn. Warn-only; needs no sandbox change; independent of the egress flag. |
-| `GUARDRAIL_REFLECTION_ENABLED` | `false` | Carry what a guard caught into this Agent's later runs, as check parameters. Warn-only at any sighting count; independent of the other flags. |
+| `GUARDRAIL_REFLECTION_ENABLED` | `false` | Carry what a guard caught into this Agent's later runs, as check parameters — exact hosts, derived host families, watched files. Warn-only at any tier; independent of the other flags. |
 | `GUARDRAIL_SENSITIVE_MARKERS` | built-in list | Comma-separated path substrings that mark a file as secret. **Overrides** the default list when set. |
-| `GUARDRAIL_SANDBOX` | `workspace-write` | Sandbox mode for egress-guarded turns. Semantic enforcement overrides it with `read-only` + `on-request` to make workspace writes approval-gated. |
+| `GUARDRAIL_SANDBOX` | `workspace-write` | Legacy, retained for config compatibility. Egress- and semantic-guarded turns use the resolved `read-only` + `on-request` policy regardless of this value. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
 | `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review. In the container Runtime, this also uses a verified `read-only` + `on-request` policy so workspace writes and network effects pause at an approval boundary before execution. |
 | `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional model override for semantic review. |
@@ -454,8 +544,11 @@ docker compose config
 | Area | Covers |
 | --- | --- |
 | `checks/` | Egress classification, credential-shape matching, outbound-blob, agent-intent patterns, and a dedicated **bypass suite** (`check-sensitive-egress.bypass.test.ts`) that pins each known gap. |
-| `reflections/` | Fact validation, dedup, per-`code` eviction, the fold into guard params, source attribution, withdrawal, the "user asked" gate, and the end-to-end learn → warn loop. |
-| `runtime/` | `run-turn` enforcement (decline / interrupt / steer), the container runner arg-building and lifecycle, ark-proxy schema conforming, codex-runner. |
+| `reflections/` | Fact validation, dedup, tiered eviction, the fold into guard params, host-family derivation, recurrence tiers, source attribution, withdrawal, the "user asked" gate, and the end-to-end learn → warn loop. |
+| `redaction/` | The two pattern tiers (recall a superset of precision), the protocol-id exclusion, the `onSend` hook, fingerprint format and idempotence. |
+| `policy/` | The shared steering vocabulary and the resolved turn security policy. |
+| `semantic/` | The semantic monitor's schema validation and prompt shaping. |
+| `runtime/` | `run-turn` enforcement (decline / interrupt / steer), the semantic approval boundary, the container runner arg-building and lifecycle, ark-proxy schema conforming, codex-runner. |
 | `server/` | API routes and auth, `JsonStore`, trace writer, `AgentService` lifecycle. |
 
 ---
@@ -554,51 +647,27 @@ false negative puts a live credential on a projector.
 
 ### Semantic intent guard
 
-The semantic guard is deliberately outside the deterministic `Check`
-abstraction. `semantic-intent-monitor.ts` makes a schema-validated, tool-less
-model assessment; `trajectory-state.ts` supplies bounded recent context and
-lower-authority source provenance; `intent-controller.ts` deterministically
-maps that assessment to allow, steer, decline, or interrupt. The monitor sees
-redacted context and never controls the Runtime directly.
+- **One model call, and it can be wrong.** The assessment is schema-checked, not
+  fact-checked. The controller only acts on high risk *and* high confidence, and
+  a deterministic `violation` always wins, but a confidently wrong "aligned" is
+  a miss and a confidently wrong "conflicts" is a wasted steer.
+- **Reasoning steering is asynchronous.** It can nudge the Agent early but does
+  not freeze Codex. The real boundary is the next state-changing operation,
+  which pauses for approval.
+- **Gated is not reviewed.** A low-risk edit passes on the deterministic checks
+  and a wait for pending reasoning, with no second model call. That is
+  deliberate — but it means the semantic model does not see every action.
+- **Audit backstop, not rollback.** If an effect completes without passing its
+  approval gate, the turn is recorded and interrupted; a change already written
+  is not undone.
+- **Traced container only.** The local-process runner has no live guard
+  pipeline. Cross-turn semantic memory, final-response DLP, and completion
+  verification are out of scope.
 
-Reasoning remains asynchronous: it can steer early but does not itself freeze
-Codex. The stronger boundary is the next state-changing operation. With the
-pinned Codex `0.111.0` Runtime, semantic enforcement sets explicit
-`approvalPolicy: "on-request"`, a v2 `readOnly` sandbox, and disabled network.
-The Runtime allows ordinary reads (`ls`, `cat`, `rg`) without an approval. A
-workspace file change emits `item/fileChange/requestApproval` before its change
-is applied, and a shell write emits `item/commandExecution/requestApproval`
-before its target is created. The approval handler first waits for
-`semanticQueue`, then runs deterministic checks, then invokes the semantic
-model only when current risk or the proposed action warrants it.
-
-Thus an action can be **gated** without being semantically model-reviewed: a
-low-risk normal edit waits for pending reasoning, passes deterministic checks,
-and is accepted without a second model call. Routine reads and completion
-notifications never invoke a semantic action assessment. A reasoning-only
-failure is recorded and allowed; failure to obtain a required decision for a
-gated consequential action declines that action.
-
-The container Runtime records and interrupts if a `fileChange` completes under
-semantic enforcement without a matching approval request. That is an audit
-backstop, not rollback: an unsupported Runtime escape discovered only after
-completion may already have changed a file. The guarantee also applies only to
-the traced container Runtime and to actions Codex routes through its sandbox
-and approval protocol; the local-process `codex exec` runner has no live guard
-pipeline. Full rollback, cross-turn semantic memory, final-response DLP, and
-completion verification remain out of scope.
-
-### Egress-intent guard
-
-- **Needs both signals.** It fires only when a stated exfiltration intent and a
-  later egress command line up in the same run. It adds no coverage over
-  sensitive-egress for an attack the Agent never narrates, and none over
-  agent-intent for a narrated attack that never reaches a command.
-- **Inherits agent-intent's brittleness.** The intent side is the same
-  pattern match, so a paraphrased intent is missed, and the same runtime
-  requirement applies — no `reasoning` items, nothing to correlate.
-- **Narration never authors a rule.** The finding carries no `facts`; the
-  reflection layer learns nothing from it.
+> The **egress-intent** check that used to correlate a narrated exfiltration
+> intent with a later outbound command was removed on 2026-08-30 — see the note
+> under [the sensitive-egress guard](#sensitive-egress-guard--guardrail_egress_enabled).
+> Reasoning is now watched by the semantic guard, which can only steer.
 
 ### Reflection layer
 
@@ -607,9 +676,14 @@ completion verification remain out of scope.
 - **Per-Agent.** Every Agent gets burned once. Sharing reflections would be a
   stronger story and a much larger poisoning blast radius — the smaller one was
   chosen deliberately.
-- **The attacker picks what is learned.** A rule keyed on a literal hostname is
-  defeated by rotating the host, and each rotation mints a useless entry (capped
-  and evicted, but still noise).
+- **The attacker still picks the shape.** Host families catch subdomain rotation
+  under one parent once two siblings have been seen; rotating the parent domain
+  each time defeats that too, and each fresh parent mints a one-off entry. The
+  tiered cap keeps those one-offs from evicting a corroborated rule, but they
+  are still noise.
+- **Tiers need real repetition.** "Recurring" and "needs a look" only trigger
+  across separate conversations. Nothing escalates a rule to a block — that is
+  not what tiers do.
 - **Only a guard refusal is a hard stop.** Everything the reflection layer does
   is a `warn` plus a `steer`.
 
@@ -657,18 +731,25 @@ apps/
     src/check-outbound-blob.ts      Encoded-blob egress guard
     src/check-agent-intent.ts       Reasoning-narration guard (warn-only)
     src/check-learned-watch.ts      Reflection-layer enforcement (warn-only)
-    src/reflections.ts     Structured memory: validate, dedup, evict, fold
+    src/reflections.ts     Structured memory: validate, dedup, evict, fold, families, tiers
+    src/semantic-intent-monitor.ts  Tool-less model call; schema-checked assessment
+    src/intent-controller.ts        Deterministic policy over that assessment
+    src/trajectory-state.ts         Bounded recent context for the monitor
+    src/steering-policy.ts          Shared remediation vocabulary + steer text
+    src/turn-security-policy.ts     Resolves sandbox / approval / network per turn
     src/redaction/         One credential-pattern registry, two tiers, three consumers
     src/container-codex-runner.ts   Disposable container per turn; buildGuardChecks
     src/codex-runner.ts    ECS child-process runner (untraced)
     src/ark-proxy.ts       Codex → Ark Responses schema adapter
     src/trace.ts / store.ts / config.ts / workspace.ts
-    tests/{checks,redaction,reflections,runtime,server}/
+    tests/{checks,redaction,reflections,policy,semantic,runtime,server}/
 deploy/volcengine/         Terraform: VPC, subnet, security group, ECS, EIP
 scripts/
-  start-local-poc.sh       npm run poc
-  setup-demo-scenario.sh   Plant the deploy-checklist injection scenario
-  reset-agent-thread.sh    Fresh conversation, keep reflections
+  start-local-poc.sh        npm run poc
+  setup-demo-scenario.sh    Plant the deploy-checklist injection scenario
+  setup-rotation-scenario.sh  Prove the learned host family in isolation
+  reset-agent-thread.sh     Fresh conversation, keep reflections
+  replay-trace.ts           Re-run the checks over a recorded trace, offline
   bootstrap-local.sh / deploy-existing-ecs.sh / deploy-volcengine.sh
 docs/
   ARCHITECTURE.md  LEARNING_LAYER.md  LOCAL_POC.md  DEPLOYMENT.md
