@@ -88,28 +88,99 @@ export interface Reflection {
   /** Structured values, verbatim from Finding.facts. The other half of the key. */
   facts: Record<string, string>;
   /**
-   * Runs that produced this, oldest first.
+   * Runs that produced this, oldest first. Provenance, not a score.
    *
-   * Not a counter. A reflection that cannot name the runs that created it cannot be
-   * safely withdrawn, and a rule nobody can withdraw is one a single bad run can
-   * plant permanently.
+   * A run is one task; a thread can hold many. So three sightings inside one
+   * conversation is an Agent retrying, which corroborates nothing — see `threads`
+   * for the signal that does. Nothing in the enforcement path reads this; it backs
+   * the "seen in N runs" line in the UI and lets a person trace a rule to the runs
+   * that made it.
+   *
+   * (An earlier comment here claimed this was what made a reflection safely
+   * withdrawable. It never was: `withdraw` matches on code and facts and does not
+   * look at this field.)
    */
   sightings: string[];
+  /**
+   * Threads this was seen in, oldest first.
+   *
+   * The Codex thread is the Agent's short-term memory: it is wiped whenever a
+   * conversation is reset, while reflections survive. So the same lesson arising
+   * in a second, independent thread is materially stronger evidence than one
+   * conversation repeating itself — the second knew nothing of the first.
+   *
+   * Optional: a record written before this field existed simply lacks it, and
+   * `tierOf` reads that as `recurring` so an upgrade never quietly demotes
+   * something already earned.
+   */
+  threads?: string[];
   firstSeenAt: string;
   lastSeenAt: string;
+}
+
+/**
+ * How well corroborated a reflection is.
+ *
+ * One signal with two consequences: `one-off` entries are evicted first, and the
+ * Agent is told about them in milder terms. An earlier draft had two counters —
+ * distinct runs for the wording, distinct threads for eviction — which is worse
+ * than one, because two near-synonyms drift apart.
+ */
+export type Tier = "one-off" | "recurring";
+
+/** Distinct threads a reflection must appear in before it counts as recurring. */
+export const RECURRING_THREADS = 2;
+
+/**
+ * Threads after which a reflection is worth a person's attention.
+ *
+ * An Agent that keeps reaching for the same blocked thing across separate
+ * conversations is a broken Agent, and no amount of re-warning fixes that.
+ */
+export const NEEDS_ATTENTION_THREADS = 3;
+
+export function tierOf(reflection: Reflection): Tier {
+  const threads = reflection.threads;
+  // Absent means the record predates the field. Treated as corroborated rather
+  // than as a single sighting, so upgrading never costs an Agent what it learned.
+  if (threads === undefined) return "recurring";
+  return threads.length >= RECURRING_THREADS ? "recurring" : "one-off";
+}
+
+/** True when an operator should look at this rather than the Agent hearing it again. */
+export function needsAttention(reflection: Reflection): boolean {
+  const threads = reflection.threads;
+  if (threads === undefined) return false;
+  return threads.length >= NEEDS_ATTENTION_THREADS;
 }
 
 /** A learned value together with the situation it applies in. */
 export interface LearnedValue {
   value: string;
   precondition: Precondition;
+  /** How corroborated the incident behind this was. Drives the wording, not the severity. */
+  tier: Tier;
+  /**
+   * Match the whole family under this value rather than the value itself.
+   *
+   * Set only when two or more incidents shared it — see `deriveFamilies`. A single
+   * sighting always stays exact, because a warn now steers, and an over-broad rule
+   * would nudge the Agent away from legitimate work on every future run.
+   */
+  family?: boolean;
 }
 
 /**
  * What the fold hands to the guards.
  *
- * Note there is no blocked list, at any sighting count — see rule 3 above.
- * Memory widens what the guards notice; it never widens what they refuse.
+ * Note there is no blocked list, at any tier — see rule 3 above. Memory widens
+ * what the guards notice; it never widens what they refuse.
+ *
+ * The tier never decides whether a reflection is handed over. Every one is, always:
+ * gating retrieval on corroboration would leave an Agent unprotected until it had
+ * been burned twice, and warn-only is what makes learning on the first sighting
+ * safe. A tier changes how firmly the Agent is told and what survives eviction —
+ * never whether it is watched, and never the severity.
  */
 export interface LearnedParams {
   watchedDestinations: LearnedValue[];
@@ -138,6 +209,23 @@ export const DEFAULT_CAPS: Record<string, number> = {
 
 /** Cap for any code without an entry above. */
 export const DEFAULT_CAP = 150;
+
+// Partitioning by code is only half of it. Inside one code, eviction used to be
+// plain recency, so an Agent looping against rotating hosts minted a fresh entry
+// per host and pushed out every destination it had already been stopped for. The
+// attacker chose what the Agent forgot, cheaply.
+//
+// So within a code, one-offs are dropped before anything recurring. A rotation
+// flood mints only one-offs — each host is a new value seen in one thread — so it
+// thrashes against the one-off quota and can never reach a corroborated entry.
+
+/**
+ * One-off slots held back even when recurring entries could fill the cap.
+ *
+ * Without it, a full recurring pool silently stops all first-sighting learning —
+ * a starvation bug that would be close to invisible in the field.
+ */
+export const MIN_ONE_OFF = 10;
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -341,6 +429,13 @@ export interface LearnInput {
   prompt: string;
   /** ISO timestamp, passed in so this stays deterministic and replayable. */
   now: string;
+  /**
+   * The Codex thread this run belonged to, when the runtime resolved one.
+   *
+   * Recorded so a lesson corroborated by a second, independent conversation can be
+   * told apart from one conversation repeating itself. See `tierOf`.
+   */
+  threadId?: string | null;
   markers?: string[];
   instructionShaped?: string[];
   caps?: Record<string, number>;
@@ -400,18 +495,36 @@ export function learnFrom(input: LearnInput): LearnResult {
     const key = reflectionKey(code, facts);
     const existing = byKey.get(key);
 
+    const threadId = input.threadId ?? null;
+
     if (existing === undefined) {
       byKey.set(key, {
         code: code,
         facts: facts,
         sightings: [input.runId],
+        // An empty list rather than an omitted field: omitted means "predates
+        // thread tracking", which tierOf reads as corroborated. A run that
+        // genuinely had no thread has earned nothing yet.
+        threads: threadId === null ? [] : [threadId],
         firstSeenAt: input.now,
         lastSeenAt: input.now,
       });
-    } else if (!existing.sightings.includes(input.runId)) {
+      if (!accepted.includes(key)) accepted.push(key);
+      return;
+    }
+
+    if (!existing.sightings.includes(input.runId)) {
       // Several findings inside one run are one sighting, not several.
       existing.sightings = [...existing.sightings, input.runId];
       existing.lastSeenAt = input.now;
+    }
+
+    // Threads accumulate on their own axis: a reflection can gain a sighting
+    // without gaining a thread (the same conversation twice), and that difference
+    // is exactly what separates the two tiers.
+    if (threadId !== null) {
+      const threads = existing.threads ?? [];
+      if (!threads.includes(threadId)) existing.threads = [...threads, threadId];
     }
 
     if (!accepted.includes(key)) accepted.push(key);
@@ -482,10 +595,17 @@ export function learnFrom(input: LearnInput): LearnResult {
   };
 }
 
+/** Most recently seen first. The tiebreak inside a tier. */
+function byRecency(left: Reflection, right: Reflection): number {
+  return right.lastSeenAt.localeCompare(left.lastSeenAt);
+}
+
 /**
- * Drop the least recently seen reflections, within each `code`.
+ * Drop the least corroborated reflections, within each `code`.
  *
- * Partitioned deliberately — see the note on DEFAULT_CAPS.
+ * Partitioned by code, then tiered inside it — both halves are load-bearing, see
+ * the notes above DEFAULT_CAPS. With nothing recurring this is exactly the plain
+ * recency eviction it replaced, which is what keeps the older behaviour intact.
  */
 export function evict(reflections: Reflection[], caps: Record<string, number>): Reflection[] {
   const byCode = new Map<string, Reflection[]>();
@@ -502,9 +622,23 @@ export function evict(reflections: Reflection[], caps: Record<string, number>): 
       for (const reflection of group) kept.add(reflection);
       continue;
     }
-    const survivors = [...group]
-      .sort((left, right) => right.lastSeenAt.localeCompare(left.lastSeenAt))
-      .slice(0, cap);
+
+    const oneOff = group.filter((r) => tierOf(r) === "one-off").sort(byRecency);
+    const recurring = group.filter((r) => tierOf(r) === "recurring").sort(byRecency);
+
+    // One-offs keep a floor so new lessons can still land, but never more room
+    // than the recurring entries leave — and never more than the cap, which is
+    // what keeps the recurring slice below non-negative at small caps.
+    const oneOffQuota = Math.min(
+      oneOff.length,
+      cap,
+      Math.max(MIN_ONE_OFF, cap - recurring.length),
+    );
+
+    const survivors = [
+      ...recurring.slice(0, cap - oneOffQuota),
+      ...oneOff.slice(0, oneOffQuota),
+    ];
     for (const reflection of survivors) kept.add(reflection);
   }
 
@@ -523,6 +657,84 @@ export function evict(reflections: Reflection[], caps: Record<string, number>): 
  * container starts. Everything lands in a watched list: a match produces a warn
  * with a steer, never a refusal.
  */
+const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+
+/**
+ * The family a host belongs to: everything but its first label.
+ *
+ * Null when there is nothing safe to widen to. A two-label host would widen to a
+ * bare public suffix — learning `attacker.com` must never come to mean `.com` —
+ * and an IPv4 address has no meaningful parent at all, since `1.2.3.4` would
+ * "widen" to `2.3.4`.
+ */
+export function familyOf(host: string): string | null {
+  if (host === "" || IPV4.test(host)) return null;
+  const labels = host.split(".");
+  if (labels.length < 3) return null;
+  return labels.slice(1).join(".");
+}
+
+/**
+ * Draw a conclusion no single incident contains.
+ *
+ * The rule is deliberately generic: when two or more incidents share a value while
+ * differing on the value they are grouped from, that shared value is the common
+ * factor and becomes a watch in its own right. Two hosts under one parent means
+ * rotation, and the family is the right unit to watch.
+ *
+ * Widening is evidence-based, never speculative. One sighting stays exact —
+ * important since a warn now steers, so an over-broad rule would nudge the Agent
+ * away from legitimate work on every future run rather than merely adding noise.
+ */
+function deriveFamilies(values: LearnedValue[]): LearnedValue[] {
+  const groups = new Map<string, { members: Set<string>; tier: Tier }>();
+
+  for (const entry of values) {
+    const family = familyOf(entry.value);
+    if (family === null) continue;
+    const key = `${entry.precondition} ${family}`;
+    const group = groups.get(key) ?? { members: new Set<string>(), tier: "one-off" as Tier };
+    group.members.add(entry.value);
+    // A family inherits the strongest tier among the incidents that formed it.
+    if (entry.tier === "recurring") group.tier = "recurring";
+    groups.set(key, group);
+  }
+
+  const families: LearnedValue[] = [];
+  for (const [key, group] of groups) {
+    if (group.members.size < 2) continue;
+    families.push({
+      value: key.split(" ")[1] as string,
+      // A lesson is a claim about something different from the incidents that
+      // formed it. An incident says "this host, in this situation" — a secret was
+      // read, then it left. Two incidents under one parent say something about the
+      // parent itself: this is where this Agent's failures go, whatever was read
+      // this run. So the family watches contact on its own terms.
+      //
+      // Inheriting the incidents' precondition would mean the family only fires
+      // when a secret was read first — exactly when sensitive-egress already
+      // refuses. It would add a second finding and no coverage. Dropping it is
+      // what lets memory speak in a run where nothing else does.
+      //
+      // Grouping still keys on precondition above, so rules learned under
+      // different conditions never merge into one with muddled semantics.
+      precondition: "none",
+      tier: group.tier,
+      family: true,
+    });
+  }
+  return families;
+}
+
+/**
+ * Turn stored reflections into guard parameters.
+ *
+ * Two layers come out of here. The exact entries are *incidents* — one thing that
+ * happened. The family entries are *lessons* — what several incidents add up to,
+ * which no single one of them states. Lessons are derived on every call and never
+ * stored, so they stay a pure function of current memory: withdraw one sibling and
+ * the group drops below two and the lesson quietly reverts to exact matching.
+ */
 export function paramsFrom(reflections: Reflection[]): LearnedParams {
   const watchedDestinations: LearnedValue[] = [];
   const watchedFiles: LearnedValue[] = [];
@@ -530,10 +742,11 @@ export function paramsFrom(reflections: Reflection[]): LearnedParams {
   for (const reflection of reflections) {
     const raw = reflection.facts.precondition ?? "none";
     const precondition: Precondition = isPrecondition(raw) ? raw : "none";
+    const tier = tierOf(reflection);
 
     const destination = reflection.facts.destination;
     if (destination !== undefined) {
-      watchedDestinations.push({ value: destination, precondition: precondition });
+      watchedDestinations.push({ value: destination, precondition: precondition, tier: tier });
     }
 
     // Only an instruction-source reflection contributes a watched file. An egress
@@ -542,12 +755,15 @@ export function paramsFrom(reflections: Reflection[]): LearnedParams {
     if (reflection.code === INSTRUCTION_SOURCE_CODE) {
       const source = reflection.facts.source;
       if (source !== undefined) {
-        watchedFiles.push({ value: source, precondition: precondition });
+        watchedFiles.push({ value: source, precondition: precondition, tier: tier });
       }
     }
   }
 
-  return { watchedDestinations: watchedDestinations, watchedFiles: watchedFiles };
+  return {
+    watchedDestinations: [...watchedDestinations, ...deriveFamilies(watchedDestinations)],
+    watchedFiles: watchedFiles,
+  };
 }
 
 /**

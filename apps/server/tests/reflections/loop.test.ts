@@ -132,7 +132,8 @@ describe("the reflection loop", () => {
     const params = paramsFrom(learned.reflections);
     // Stored under one spelling, with the workspace prefix stripped.
     expect(params.watchedFiles).toEqual([
-      { value: "skills/deploy-helper.md", precondition: "untrusted-source-read" },
+      // tier is one-off: learnFrom ran without a threadId, so nothing corroborated it.
+      { value: "skills/deploy-helper.md", precondition: "untrusted-source-read", tier: "one-off" },
     ]);
 
     // --- Run 2: nothing about the command matches what was learned. ---

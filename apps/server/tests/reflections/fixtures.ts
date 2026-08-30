@@ -125,3 +125,46 @@ export function destinationReflection(index: number, at: string): Reflection {
     lastSeenAt: at,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Injecting memory instead of earning it
+// ---------------------------------------------------------------------------
+//
+// A reflection is a plain record and the checks are pure, so "what happens after
+// a hundred mistakes" is a fixture, not a hundred runs. These mint incidents of a
+// controlled shape so a test can say what it means in one line.
+
+/** One incident, with control over the two things that decide its tier. */
+export function incident(input: {
+  destination?: string;
+  source?: string;
+  precondition?: string;
+  /** Distinct threads it was seen in. Two or more makes it `recurring`. */
+  threads?: string[];
+  sightings?: string[];
+  at?: string;
+}): Reflection {
+  const facts: Record<string, string> = {
+    precondition: input.precondition ?? "sensitive-read",
+  };
+  if (input.destination !== undefined) facts.destination = input.destination;
+  if (input.source !== undefined) facts.source = input.source;
+
+  return {
+    code: input.source !== undefined && input.destination === undefined
+      ? "instruction-source"
+      : "sensitive-egress",
+    facts: facts,
+    sightings: input.sightings ?? ["run-1"],
+    threads: input.threads ?? ["thread-1"],
+    firstSeenAt: input.at ?? NOW,
+    lastSeenAt: input.at ?? NOW,
+  };
+}
+
+/** `count` hosts under one parent — the shape a rotating attacker leaves behind. */
+export function rotation(parent: string, count: number, at: string = NOW): Reflection[] {
+  return Array.from({ length: count }, (_, index) =>
+    incident({ destination: `h${index}.${parent}`, threads: [`thread-${index}`], at: at }),
+  );
+}

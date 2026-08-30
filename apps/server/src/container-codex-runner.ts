@@ -335,6 +335,10 @@ export class ContainerCodexRunner implements AgentRunner {
             runId: request.runId ?? request.agentId,
             prompt: request.prompt,
             now: new Date().toISOString(),
+            // The resolved thread, not request.threadId — the first turn of a
+            // conversation starts with null and Codex assigns one. Without this
+            // nothing ever becomes `recurring` outside a test.
+            threadId: outcome.threadId,
             ...(this.config.guardrailSensitiveMarkers.length > 0
               ? { markers: this.config.guardrailSensitiveMarkers }
               : {}),
