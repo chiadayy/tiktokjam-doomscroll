@@ -424,6 +424,13 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
           actionIdentityAt(finding.seq, records) === actionIdentity(itemId, seq),
       );
       if (unsafe && itemId !== null && !approvalGates.has(itemId)) {
+        const completed = commandsOf(records)
+          .filter((command) => command.itemId === itemId && command.phase === "completed")
+          .at(-1);
+        const commandNotFoundObserved =
+          /\b(?:command not found|not recognized as an internal or external command)\b/i.test(
+            completed?.output ?? "",
+          );
         findings.push({
           check: "runtime-enforcement",
           code: "ungated-command",
@@ -431,8 +438,14 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
           seq,
           evidence: [seq],
           message:
-            "Effect gating expected this unsafe command to wait for item/commandExecution/requestApproval, but it completed without that gate. The turn was interrupted; the completed effect was not rolled back.",
-          metadata: { checkpoint: "command", controllerDecision: "interrupt" },
+            "Effect gating expected this unsafe command to wait for item/commandExecution/requestApproval, but the command completed without that gate. The turn was interrupted because the pre-execution enforcement boundary was not observed. Whether the protected external effect actually occurred cannot be established from this event, and no rollback is claimed.",
+          metadata: {
+            checkpoint: "command",
+            controllerDecision: "interrupt",
+            exitCode: completed?.exitCode ?? null,
+            commandNotFoundObserved,
+            protectedEffect: "unknown",
+          },
         });
         intervened = true;
         sendInterrupt();

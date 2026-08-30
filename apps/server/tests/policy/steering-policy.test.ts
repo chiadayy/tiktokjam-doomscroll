@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { Finding } from "./checks.js";
+import type { Finding } from "../../src/checks.js";
 import {
   MAX_STEERING_TASK_CHARS,
   remediationForFinding,
   steeringPrompt,
-} from "./steering-policy.js";
+} from "../../src/steering-policy.js";
 
 function finding(check: string, code: string): Finding {
   return {

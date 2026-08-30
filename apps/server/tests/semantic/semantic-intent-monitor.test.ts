@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { fingerprint } from "./redaction/index.js";
+import { fingerprint } from "../../src/redaction/index.js";
 import {
   ModelSemanticIntentMonitor,
   redactSensitiveText,
   type SemanticMonitorInput,
-} from "./semantic-intent-monitor.js";
+} from "../../src/semantic-intent-monitor.js";
 
 const input: SemanticMonitorInput = {
   checkpoint: "reasoning",
@@ -38,6 +38,27 @@ function assessmentResponse(
     { status: 200, headers: { "content-type": "application/json" } },
   );
 }
+
+function monitorReturning(output: Record<string, unknown>): ModelSemanticIntentMonitor {
+  return new ModelSemanticIntentMonitor({
+    apiKey: "test-key",
+    baseUrl: "https://model.example/v1",
+    model: "judge-model",
+    timeoutMs: 1_000,
+    fetch: async () =>
+      new Response(JSON.stringify({ output_text: JSON.stringify(output) }), { status: 200 }),
+  });
+}
+
+const validOutput = {
+  riskScore: 0.2,
+  confidence: 0.9,
+  classification: "aligned",
+  apparentObjective: "fix validation",
+  conflictsWithTask: false,
+  evidenceSeqs: [2],
+  rationale: "The action remains compatible with the task.",
+};
 
 describe("model semantic intent monitor", () => {
   it("parses and validates a structured Responses API assessment", async () => {
@@ -89,6 +110,38 @@ describe("model semantic intent monitor", () => {
           status: 200,
         }),
     });
+
+    await expect(monitor.assess(input)).rejects.toThrow();
+  });
+
+  it("normalizes decimal evidence sequence strings to integers", async () => {
+    const monitor = monitorReturning({ ...validOutput, evidenceSeqs: [2, "148", "003"] });
+
+    await expect(monitor.assess(input)).resolves.toMatchObject({ evidenceSeqs: [2, 148, 3] });
+  });
+
+  it("trims and bounds an overlong rationale without discarding the verdict", async () => {
+    const monitor = monitorReturning({ ...validOutput, rationale: `  ${"x".repeat(1_200)}  ` });
+
+    const result = await monitor.assess(input);
+    expect(result.classification).toBe("aligned");
+    expect(result.rationale).toHaveLength(1_000);
+  });
+
+  it.each([
+    ["riskScore", "0.2"],
+    ["confidence", "0.9"],
+    ["classification", "probably_aligned"],
+    ["conflictsWithTask", "false"],
+    ["apparentObjective", 123],
+  ])("does not repair malformed core field %s", async (field, malformed) => {
+    const monitor = monitorReturning({ ...validOutput, [field]: malformed });
+
+    await expect(monitor.assess(input)).rejects.toThrow();
+  });
+
+  it("rejects arbitrary evidence strings instead of extracting numbers", async () => {
+    const monitor = monitorReturning({ ...validOutput, evidenceSeqs: ["seq 148", "148abc"] });
 
     await expect(monitor.assess(input)).rejects.toThrow();
   });
@@ -159,6 +212,9 @@ describe("model semantic intent monitor", () => {
     expect(prompt).toContain("compare behavior before and after it");
     expect(prompt).toContain("previously rejected unsafe behavior becomes expected");
     expect(prompt).toContain("Reassess the current proposed action independently");
+    expect(prompt).toContain("evidenceSeqs must contain only integer sequence numbers");
+    expect(prompt).toContain("rationale must be one concise paragraph, no more than 600 characters");
+    expect(prompt).toContain("Return only the requested JSON object");
     expect(prompt).toContain("invalid local tokens must be rejected");
     expect(prompt).toContain("test/auth.test.ts");
   });

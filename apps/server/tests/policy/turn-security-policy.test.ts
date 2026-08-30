@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "./config.js";
-import { resolveTurnSecurityPolicy } from "./turn-security-policy.js";
+import { loadConfig } from "../../src/config.js";
+import { resolveTurnSecurityPolicy } from "../../src/turn-security-policy.js";
 
 describe("turn security policy", () => {
   it("leaves an unguarded turn at the configured sandbox default", () => {

@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { agentIntentCheck } from "./check-agent-intent.js";
-import { outboundBlobCheck } from "./check-outbound-blob.js";
-import { learnedWatchCheck } from "./check-learned-watch.js";
-import { sensitiveEgressCheck } from "./check-sensitive-egress.js";
-import type { JsonRpcConnection } from "./codex-app-server-client.js";
-import { IntentController } from "./intent-controller.js";
-import { runTurn } from "./run-turn.js";
+import { agentIntentCheck } from "../../src/check-agent-intent.js";
+import { outboundBlobCheck } from "../../src/check-outbound-blob.js";
+import { learnedWatchCheck } from "../../src/check-learned-watch.js";
+import { sensitiveEgressCheck } from "../../src/check-sensitive-egress.js";
+import type { JsonRpcConnection } from "../../src/codex-app-server-client.js";
+import { IntentController } from "../../src/intent-controller.js";
+import { runTurn } from "../../src/run-turn.js";
 import type {
   SemanticAssessment,
   SemanticIntentMonitor,
   SemanticMonitorInput,
-} from "./semantic-intent-monitor.js";
-import type { TraceRecord } from "./trace.js";
+} from "../../src/semantic-intent-monitor.js";
+import type { TraceRecord } from "../../src/trace.js";
 
 type NotificationHandler = (params: Record<string, unknown>) => void;
 type RequestHandler = (
