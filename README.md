@@ -80,7 +80,10 @@ you are adding a check.
   user prompt and Agent instructions. Reasoning can raise risk and trigger a
   task-grounded steer; a corroborating high-risk command or file-change
   approval is declined and steered. A repeated blocked divergence interrupts
-  the turn. Existing deterministic violations always take precedence.
+  the turn. In the container Runtime, enabling it also forces workspace writes
+  through a read-only/on-request pre-execution approval boundary, so pending
+  reasoning assessment completes before a mutation is allowed. Existing
+  deterministic violations always take precedence.
 
 See [Guard coverage and limitations](#guard-coverage-and-limitations).
 
@@ -420,9 +423,9 @@ scripts/reset-agent-thread.sh --forget    # also drop what it learned
 | `GUARDRAIL_INTENT_ENABLED` | `false` | Run the agent-intent check every turn. Warn-only; needs no sandbox change; independent of the egress flag. |
 | `GUARDRAIL_REFLECTION_ENABLED` | `false` | Carry what a guard caught into this Agent's later runs, as check parameters. Warn-only at any sighting count; independent of the other flags. |
 | `GUARDRAIL_SENSITIVE_MARKERS` | built-in list | Comma-separated path substrings that mark a file as secret. **Overrides** the default list when set. |
-| `GUARDRAIL_SANDBOX` | `workspace-write` | Sandbox mode a guarded turn is pinned to. Keep `workspace-write` so network denial and approval escalation stay meaningful. |
+| `GUARDRAIL_SANDBOX` | `workspace-write` | Sandbox mode for egress-guarded turns. Semantic enforcement overrides it with `read-only` + `on-request` to make workspace writes approval-gated. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
-| `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review at completed reasoning and selected consequential action checkpoints. Container Runtime only. |
+| `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review. In the container Runtime, this also uses a verified `read-only` + `on-request` policy so workspace writes and network effects pause at an approval boundary before execution. |
 | `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional model override for semantic review. |
 | `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required high-impact reviews fail closed; reasoning-only reviews fail open with a warning. |
 | `LOCAL_POC_DATA_ROOT` | platform-specific | Local metadata / workspace / session directory for `npm run poc`. |
@@ -556,19 +559,32 @@ lower-authority source provenance; `intent-controller.ts` deterministically
 maps that assessment to allow, steer, decline, or interrupt. The monitor sees
 redacted context and never controls the Runtime directly.
 
-Checkpoints are completed reasoning items and approval-gated commands or file
-changes selected by elevated risk or a small consequential-action trigger.
-Routine reads and protocol noise do not invoke the model. A reasoning-only
-failure is recorded and allowed; failure to obtain a required decision for a
-consequential action declines that action. Semantic findings and evidence are
-stored with the Run, while real approval replies, steers, and interrupts remain
-in the verbatim JSON-RPC trace.
+Reasoning remains asynchronous: it can steer early but does not itself freeze
+Codex. The stronger boundary is the next state-changing operation. With the
+pinned Codex `0.111.0` Runtime, semantic enforcement sets explicit
+`approvalPolicy: "on-request"`, a v2 `readOnly` sandbox, and disabled network.
+The Runtime allows ordinary reads (`ls`, `cat`, `rg`) without an approval. A
+workspace file change emits `item/fileChange/requestApproval` before its change
+is applied, and a shell write emits `item/commandExecution/requestApproval`
+before its target is created. The approval handler first waits for
+`semanticQueue`, then runs deterministic checks, then invokes the semantic
+model only when current risk or the proposed action warrants it.
 
-**V1 limitation:** pre-execution decline depends on Codex emitting an approval
-request. An in-sandbox workspace edit that the Runtime applies without an
-approval cannot be guaranteed to be stopped before application. Full rollback,
-cross-turn semantic memory, final-response DLP, and completion verification are
-out of scope for this version.
+Thus an action can be **gated** without being semantically model-reviewed: a
+low-risk normal edit waits for pending reasoning, passes deterministic checks,
+and is accepted without a second model call. Routine reads and completion
+notifications never invoke a semantic action assessment. A reasoning-only
+failure is recorded and allowed; failure to obtain a required decision for a
+gated consequential action declines that action.
+
+The container Runtime records and interrupts if a `fileChange` completes under
+semantic enforcement without a matching approval request. That is an audit
+backstop, not rollback: an unsupported Runtime escape discovered only after
+completion may already have changed a file. The guarantee also applies only to
+the traced container Runtime and to actions Codex routes through its sandbox
+and approval protocol; the local-process `codex exec` runner has no live guard
+pipeline. Full rollback, cross-turn semantic memory, final-response DLP, and
+completion verification remain out of scope.
 
 ### Egress-intent guard
 

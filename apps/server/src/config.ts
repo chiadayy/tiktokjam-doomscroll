@@ -98,10 +98,10 @@ const envSchema = z.object({
    */
   GUARDRAIL_SENSITIVE_MARKERS: z.string().default(""),
   /**
-   * The sandbox mode a guarded turn runs in, regardless of CODEX_SANDBOX_MODE.
-   * "workspace-write" keeps network denial and approval escalation meaningful,
-   * which is what lets the guard refuse an outbound command before it runs.
-   * Drop to "danger-full-access" only if the runtime cannot honour it.
+   * The sandbox mode for an egress-guarded turn, regardless of
+   * CODEX_SANDBOX_MODE. Semantic enforcement deliberately overrides this with
+   * a verified read-only policy so workspace mutations cannot bypass approval.
+   * "workspace-write" keeps egress network approval escalation meaningful.
    */
   GUARDRAIL_SANDBOX: z
     .enum(["read-only", "workspace-write", "danger-full-access"])
@@ -123,7 +123,11 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((value) => value === "true" || value === "1"),
-  /** Enable the asynchronous, task-aware semantic intent monitor. Container Runtime only. */
+  /**
+   * Enable task-aware semantic monitoring and its container-runtime
+   * pre-execution policy: read-only sandbox, on-request approvals, and denied
+   * network. Container Runtime only.
+   */
   GUARDRAIL_SEMANTIC_ENABLED: z
     .string()
     .default("false")

@@ -7,8 +7,13 @@
 // handful of types we actually read live here; regenerate and re-check
 // these if the pinned CODEX_VERSION in Dockerfile.runtime changes.
 
-/** `AskForApproval` — note the kebab-case spellings for the non-"untrusted" values. */
-export type AskForApproval = "untrusted" | "on-failure" | "on-request" | "never";
+/** `AskForApproval` from the pinned v2 app-server bindings. */
+export type AskForApproval =
+  | "untrusted"
+  | "on-failure"
+  | "on-request"
+  | "never"
+  | { reject: { sandbox_approval: boolean; rules: boolean; mcp_elicitations: boolean } };
 
 /**
  * v2 `SandboxPolicy` is camelCase. Do NOT confuse it with the top-level

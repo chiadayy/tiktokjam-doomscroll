@@ -84,6 +84,17 @@ lower-authority evidence. Semantic inference never talks to the Runtime
 directly; `runTurn()` remains the only live enforcement point. Derived findings
 are persisted on the Run and do not modify the append-only raw trace.
 
+When `GUARDRAIL_SEMANTIC_ENABLED=true`, the container runner resolves an
+explicit turn security policy before starting Codex: `read-only` sandbox,
+`on-request` approval policy, and denied network. This does not make every
+operation a semantic-model call. It makes state-changing workspace actions and
+network effects pause at Codex's real approval request, where `runTurn()` waits
+for prior reasoning assessment, applies deterministic checks, and only then
+performs a selected semantic action review. Read/list/search work remains
+ungated. A completed file change without its expected approval is recorded as
+an enforcement-boundary violation and interrupts the turn, but cannot undo an
+already-completed change.
+
 ## Deployment profiles
 
 | Profile | Control plane | Agent execution |
