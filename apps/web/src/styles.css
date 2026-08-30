@@ -1511,6 +1511,33 @@ textarea:focus {
   padding: 2px 8px;
 }
 
+/* Corroboration, not severity. A recurring rule was reached by two separate
+   conversations, so the second knew nothing of the first — it survives eviction
+   and the Agent is told about it in firmer terms. "Needs a look" is the point
+   where re-warning has stopped working and a person should intervene. */
+
+.reflection-tier,
+.reflection-attention {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.reflection-tier {
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--line);
+}
+
+.reflection-attention {
+  color: var(--red);
+  background: #fdf1f1;
+  border: 1px solid rgba(197, 83, 83, 0.3);
+  font-weight: 700;
+}
+
 .reflection-subject code,
 .finding-top code {
   font-size: 12px;
