@@ -66,6 +66,7 @@ describe("watched files", () => {
     expect(findings[0]?.requestSteer).toBe(true);
     expect(findings[0]?.steerStrength).toBe("normal");
     expect(findings[0]?.steer).toBeUndefined();
+    expect(findings[0]?.requestSemanticReview).not.toBe(true);
   });
 
   it("catches a variant that shares nothing with the original command", () => {

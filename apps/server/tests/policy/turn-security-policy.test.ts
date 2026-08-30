@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "./config.js";
-import { resolveTurnSecurityPolicy } from "./turn-security-policy.js";
+import { loadConfig } from "../../src/config.js";
+import { resolveTurnSecurityPolicy } from "../../src/turn-security-policy.js";
 
 describe("turn security policy", () => {
   it("leaves an unguarded turn at the configured sandbox default", () => {
@@ -12,10 +12,11 @@ describe("turn security policy", () => {
       sandboxMode: "danger-full-access",
       denyNetwork: false,
       semanticEnforcement: false,
+      effectGating: false,
     });
   });
 
-  it("preserves the egress guard's configured sandbox and network denial", () => {
+  it("uses the verified effect gate for deterministic egress enforcement", () => {
     const policy = resolveTurnSecurityPolicy(
       loadConfig({
         NODE_ENV: "test",
@@ -25,10 +26,11 @@ describe("turn security policy", () => {
     );
 
     expect(policy).toEqual({
-      sandboxMode: "workspace-write",
+      sandboxMode: "read-only",
       denyNetwork: true,
       approvalPolicy: "on-request",
       semanticEnforcement: false,
+      effectGating: true,
     });
   });
 
@@ -47,6 +49,7 @@ describe("turn security policy", () => {
       denyNetwork: true,
       approvalPolicy: "on-request",
       semanticEnforcement: true,
+      effectGating: true,
     });
   });
 });

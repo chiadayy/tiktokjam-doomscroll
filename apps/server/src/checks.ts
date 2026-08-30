@@ -44,7 +44,8 @@ export interface Finding {
   /** One sentence, written for a person reading a report. */
   message: string;
   /**
-   * What to say to the agent when this finding should correct it mid-run.
+   * Legacy trusted correction text. New deterministic checks should use
+   * requestSteer and let the shared steering policy construct the text.
    *
    * Leave it unset to record the finding without intervening. When set, the
    * enforcement layer sends this text into the running turn (or refuses the
@@ -53,13 +54,12 @@ export interface Finding {
    * retry the same thing.
    */
   steer?: string;
-  /**
-   * Ask the centralized steering policy to correct the agent. Unlike `steer`,
-   * this carries no detector-authored text.
-   */
+  /** Ask live enforcement for the shared category-based correction. */
   requestSteer?: boolean;
   /** Tone for a centralized correction when `requestSteer` is set. */
   steerStrength?: SteerStrength;
+  /** Ask the task-aware controller to review this specific pending action. */
+  requestSemanticReview?: boolean;
   /** Compact derived audit data. Never put raw secrets or model chain-of-thought here. */
   metadata?: Record<string, unknown>;
   /**

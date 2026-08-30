@@ -66,7 +66,8 @@ const envSchema = z.object({
    * Run the sensitive-egress family of checks (sensitive-egress and
    * outbound-blob) against every turn, and pin a guarded turn to
    * GUARDRAIL_SANDBOX with network denied so an outbound command escalates to
-   * an approval the guard can refuse. Off by default: with no checks the agent
+   * an approval the guard can refuse. Guarded effects use the verified
+   * read-only/on-request Runtime policy. Off by default: with no checks the agent
    * runs exactly as it would unobserved.
    *
    * This is one guard in what will be a family. Each guard gets its own
@@ -98,10 +99,8 @@ const envSchema = z.object({
    */
   GUARDRAIL_SENSITIVE_MARKERS: z.string().default(""),
   /**
-   * The sandbox mode for an egress-guarded turn, regardless of
-   * CODEX_SANDBOX_MODE. Semantic enforcement deliberately overrides this with
-   * a verified read-only policy so workspace mutations cannot bypass approval.
-   * "workspace-write" keeps egress network approval escalation meaningful.
+   * Legacy egress sandbox setting retained for configuration compatibility.
+   * Hard deterministic and semantic guards use the verified read-only policy.
    */
   GUARDRAIL_SANDBOX: z
     .enum(["read-only", "workspace-write", "danger-full-access"])
