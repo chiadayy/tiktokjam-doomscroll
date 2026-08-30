@@ -32,11 +32,12 @@ import type { TraceRecord } from "./trace.js";
 import type { RunUsage } from "./types.js";
 
 /**
- * Most corrections one turn may receive from the deterministic checks.
+ * Most soft warning corrections one turn may receive from deterministic checks.
  *
  * Small on purpose. A steer is not a log line — it is text pushed into the
  * conversation the Agent is mid-way through, so several in a row stop reading
- * as a correction and start reading as a new task.
+ * as a correction and start reading as a new task. The single recovery steer
+ * after the first blocked action is reserved separately from this budget.
  */
 export const MAX_STEERS_PER_TURN = 3;
 
@@ -132,19 +133,17 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     return `${finding.check}:${finding.code}:${action}`;
   };
 
-  // Every steer is text injected into the turn the agent is still working in,
-  // so it costs tokens and competes with the task for attention. Violations are
-  // deduped per action, while warns are keyed per record — an Agent that reads
-  // four watched files produces four of them. Cap the deterministic checks so a
-  // memory with several matches corrects the Agent rather than talking over it.
-  // Findings past the cap are still recorded; only delivery stops.
-  let steersSent = 0;
+  // Every soft steer is text injected into the live turn, so it costs tokens
+  // and competes with the task for attention. Warns are keyed per record — an
+  // Agent that reads four watched files produces four of them. Cap those soft
+  // corrections without consuming the separately reserved recovery steer.
+  // Findings past the soft cap are still recorded; only delivery stops.
+  let softSteersSent = 0;
 
-  function sendSteerWithinBudget(text: string): boolean {
-    if (steersSent >= MAX_STEERS_PER_TURN) return false;
-    steersSent += 1;
+  function sendSoftSteerWithinBudget(text: string): void {
+    if (softSteersSent >= MAX_STEERS_PER_TURN) return;
+    softSteersSent += 1;
     sendSteer(text);
-    return true;
   }
 
   /**
@@ -172,7 +171,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
       if (finding.severity !== "violation") {
         const category = remediationForFinding(finding);
         if ((finding.requestSteer === true || finding.steer !== undefined) && category !== null) {
-          sendSteerWithinBudget(steeringPrompt(options.prompt, category, false));
+          sendSoftSteerWithinBudget(steeringPrompt(options.prompt, category, false));
         }
         continue;
       }
@@ -184,7 +183,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
       } else {
         const category = remediationForFinding(finding);
         if (category !== null) {
-          sendSteerWithinBudget(steeringPrompt(options.prompt, category, false));
+          sendSoftSteerWithinBudget(steeringPrompt(options.prompt, category, false));
         }
       }
     }
@@ -281,12 +280,9 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
       sendInterrupt();
       return;
     }
-    const corrected = sendSteerWithinBudget(
-      trustedSteer ?? steeringPrompt(options.prompt, category, true),
-    );
-    // A declined action without a correction has no recovery path. This can
-    // happen only after the bounded steering budget has already been spent.
-    if (!corrected) sendInterrupt();
+    // Recovery has its own single-use allowance: the first distinct blocked
+    // action always receives this correction, while the second interrupts.
+    sendSteer(trustedSteer ?? steeringPrompt(options.prompt, category, true));
   }
 
   function decideWithoutSemantic(
@@ -337,7 +333,9 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
 
     const traceAtCheckpoint = [...records];
     const reviewAndApply = semanticQueue.then(async () => {
-      const forceReview = deterministic.some((finding) => finding.severity === "warn");
+      const forceReview = deterministic.some(
+        (finding) => finding.requestSemanticReview === true,
+      );
       const result = await intentController.reviewAction(traceAtCheckpoint, action, forceReview);
       if (result.finding !== undefined) findings.push(result.finding);
       if (result.decision === "allow" || result.decision === "steer") {

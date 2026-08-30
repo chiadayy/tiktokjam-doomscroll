@@ -60,6 +60,8 @@ describe("outbound-blob", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]?.severity).toBe("warn");
     expect(findings[0]?.steer).toBeUndefined();
+    expect(findings[0]?.requestSteer).not.toBe(true);
+    expect(findings[0]?.requestSemanticReview).toBe(true);
     expect(findings.some((f) => f.severity === "violation")).toBe(false);
   });
 

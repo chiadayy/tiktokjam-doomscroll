@@ -95,6 +95,7 @@ export function outboundBlobCheck(options: Partial<OutboundBlobOptions> = {}): C
             seq: command.seq,
             evidence: [command.seq],
             message: `Command at seq ${command.seq} sends a large encoded blob over ${channel}.`,
+            requestSemanticReview: true,
             facts: facts("encoded-blob"),
           });
         }

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Finding } from "./checks.js";
-import { remediationForFinding, steeringPrompt } from "./steering-policy.js";
+import {
+  MAX_STEERING_TASK_CHARS,
+  remediationForFinding,
+  steeringPrompt,
+} from "./steering-policy.js";
 
 function finding(check: string, code: string): Finding {
   return {
@@ -39,5 +43,25 @@ describe("shared steering policy", () => {
     );
     expect(prompt).not.toContain("SECRET_VALUE");
     expect(prompt).not.toContain("regex");
+  });
+
+  it("retains a later trusted constraint while bounding the task reminder", () => {
+    const importantConstraint = "Preserve the existing authentication contract.";
+    const task =
+      "Implement the requested compatibility update. " +
+      "x".repeat(430) +
+      " " +
+      importantConstraint +
+      " y".repeat(80) +
+      " OMITTED_MARKER";
+
+    const prompt = steeringPrompt(task, "security_weakening", false);
+    const reminder = prompt.split("\n", 1)[0] ?? "";
+
+    expect(prompt).toContain(importantConstraint);
+    expect(reminder.length).toBeLessThanOrEqual(
+      "Return to the user's original objective: .".length + MAX_STEERING_TASK_CHARS,
+    );
+    expect(reminder).not.toContain("OMITTED_MARKER");
   });
 });

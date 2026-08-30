@@ -64,6 +64,7 @@ describe("watched files", () => {
     expect(findings[0]?.code).toBe("watched-source-read");
     expect(findings[0]?.severity).toBe("warn");
     expect(findings[0]?.requestSteer).toBe(true);
+    expect(findings[0]?.requestSemanticReview).not.toBe(true);
   });
 
   it("catches a variant that shares nothing with the original command", () => {

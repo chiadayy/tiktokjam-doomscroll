@@ -55,6 +55,8 @@ export interface Finding {
   steer?: string;
   /** Ask live enforcement for the shared category-based correction. */
   requestSteer?: boolean;
+  /** Ask the task-aware controller to review this specific pending action. */
+  requestSemanticReview?: boolean;
   /** Compact derived audit data. Never put raw secrets or model chain-of-thought here. */
   metadata?: Record<string, unknown>;
   /**

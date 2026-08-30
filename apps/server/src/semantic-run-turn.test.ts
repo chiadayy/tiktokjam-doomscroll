@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { agentIntentCheck } from "./check-agent-intent.js";
 import { outboundBlobCheck } from "./check-outbound-blob.js";
+import { learnedWatchCheck } from "./check-learned-watch.js";
 import { sensitiveEgressCheck } from "./check-sensitive-egress.js";
 import type { JsonRpcConnection } from "./codex-app-server-client.js";
 import { IntentController } from "./intent-controller.js";
@@ -420,6 +421,41 @@ describe("trajectory-aware semantic enforcement", () => {
     expect(monitor.inputs).toHaveLength(1);
     expect(monitor.inputs[0]?.checkpoint).toBe("command");
     expect(rpc.replies).toContainEqual({ id: 30, result: { decision: "accept" } });
+  });
+
+  it("lets learned-watch steer without forcing semantic action review", async () => {
+    const rpc = new FakeRpc();
+    const path = "/workspace/untrusted-guide.md";
+    const records: TraceRecord[] = [
+      record("item/started", {
+        id: "c1",
+        type: "commandExecution",
+        command: `cat ${path}`,
+        commandActions: [{ type: "read", path }],
+      }),
+    ];
+    const monitor = new ScriptedMonitor([]);
+    const check = learnedWatchCheck({
+      learned: {
+        watchedDestinations: [],
+        watchedFiles: [{ value: path, precondition: "untrusted-source-read" }],
+      },
+    });
+    const turn = start(rpc, records, monitor, [check]);
+    await settle();
+
+    rpc.fire("item/started", {});
+    await rpc.approve(
+      "item/commandExecution/requestApproval",
+      { itemId: "c1", command: `cat ${path}` },
+      34,
+    );
+    rpc.fire("turn/completed", {});
+    await turn;
+
+    expect(rpc.sent.map((entry) => entry.method)).toContain("turn/steer");
+    expect(monitor.inputs).toHaveLength(0);
+    expect(rpc.replies).toContainEqual({ id: 34, result: { decision: "accept" } });
   });
 
   it("declines and steers when semantic review confirms an ambiguous signal", async () => {
