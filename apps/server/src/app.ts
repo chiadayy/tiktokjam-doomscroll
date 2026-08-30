@@ -7,8 +7,15 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import { HttpError } from "./errors.js";
+import { redactText } from "./redaction/index.js";
 import { traceFilePath } from "./trace.js";
 import type { AgentService } from "./agent-service.js";
+
+/**
+ * Response bodies the outbound redactor runs over. Anything else — static
+ * assets above all — is served byte-for-byte as written.
+ */
+const REDACTED_CONTENT_TYPES = ["application/json", "application/x-ndjson"];
 
 const agentIdParams = z.object({ id: z.string().uuid() });
 const runIdParams = z.object({ id: z.string().uuid() });
@@ -63,6 +70,48 @@ export async function createApp(
     if (!valid) {
       return reply.code(401).send({ error: "Authentication required" });
     }
+  });
+
+  /**
+   * Redact credential-shaped values out of every response body on the way out.
+   *
+   * This is one global hook rather than a patch on the routes that are known to
+   * leak, and that choice is the whole point. Per-route redaction is fail-open:
+   * it protects exactly the routes someone remembered, and every route added
+   * afterwards leaks by default until someone notices. That is not a
+   * hypothetical failure mode — it is how `Message.content` and `agent.lastError`
+   * were missed in the first pass, when only the trace route looked risky.
+   *
+   * Scoped by content type, not by URL. `application/json` and
+   * `application/x-ndjson` are the two shapes that carry agent-produced text.
+   * In production this app also serves the built React UI through
+   * `fastifyStatic` below; running a credential regex over JS bundles buys
+   * nothing and risks corrupting a bundle whose minified output happens to
+   * contain a long base64 run.
+   *
+   * The payload may be a string, a Buffer, or a stream. Streams pass through
+   * untouched: buffering one here to redact it would defeat the point of
+   * streaming, and nothing in this app currently streams a response body.
+   */
+  app.addHook("onSend", async (_request, reply, payload) => {
+    const contentType = String(reply.getHeader("content-type") ?? "");
+    if (!REDACTED_CONTENT_TYPES.some((type) => contentType.includes(type))) {
+      return payload;
+    }
+
+    const isBuffer = Buffer.isBuffer(payload);
+    if (typeof payload !== "string" && !isBuffer) return payload;
+
+    const original = isBuffer ? payload.toString("utf8") : payload;
+    const { text, redactions } = redactText(original);
+    if (redactions === 0) return payload;
+
+    // Fastify recomputes content-length from what we return, but only for a
+    // body it can measure — set it explicitly so a Buffer response stays
+    // consistent after the byte length changes.
+    reply.header("x-redactions", String(redactions));
+    reply.header("content-length", String(Buffer.byteLength(text, "utf8")));
+    return isBuffer ? Buffer.from(text, "utf8") : text;
   });
 
   app.get("/api/health", async () => ({

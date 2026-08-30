@@ -80,11 +80,20 @@ export const api = {
   run: (id: string) => request<{ run: AgentRun }>("/api/runs/" + id),
   // The trace is JSON Lines, not JSON, so it bypasses the shared request
   // helper. Returns null while a run has not written anything yet.
-  trace: async (id: string): Promise<string | null> => {
+  //
+  // The server redacts credential-shaped values out of this body on the way
+  // out and reports how many in `x-redactions`. That count is read here rather
+  // than dropped, because a log that was altered has to say so — silently
+  // changed evidence is its own problem, separate from the leak it prevents.
+  trace: async (id: string): Promise<{ text: string; redactions: number } | null> => {
     const response = await fetch("/api/runs/" + id + "/trace", {
       headers: authToken ? { Authorization: "Bearer " + authToken } : {},
     });
     if (!response.ok) return null;
-    return response.text();
+    const redactions = Number(response.headers.get("x-redactions") ?? 0);
+    return {
+      text: await response.text(),
+      redactions: Number.isFinite(redactions) ? redactions : 0,
+    };
   },
 };

@@ -31,11 +31,32 @@
 // out. It reads only the trace and never touches the filesystem or the network.
 //
 // Secret hygiene: a raw credential value never leaves this function. Findings,
-// steers and evidence carry a fingerprint (`sk_…(28 chars)`) and seq numbers,
+// steers and evidence carry a fingerprint (`sk_…123727(28 chars)`) and seqs,
 // never the value itself.
 
 import { commandsOf, readsOf, type Check, type Finding } from "./checks.js";
 import type { TraceRecord } from "./trace.js";
+// The credential shapes this guard gates on, and the fingerprint it reports
+// them with, both live in ./redaction. The direction of that import is
+// deliberate and worth a sentence, because the obvious arrangement is the
+// opposite one.
+//
+// This file is the oldest consumer, so it used to own the patterns and
+// everyone else imported from it — which quietly made the *detector* the
+// authority on what a secret looks like. But detection wants precision (a
+// false positive blocks a legitimate agent action) and redaction wants recall
+// (a false negative puts a credential on a projector). A single list cannot
+// serve both, and when the redactor needed a broader answer the result was a
+// second list that drifted from this one.
+//
+// So the registry moved out and this guard became one of its consumers,
+// reading the conservative tier. See ./redaction/patterns.ts.
+import {
+  DETECTION_PATTERNS,
+  fingerprint,
+  KEYVAL_PATTERN,
+  LONG_BASE64_PATTERN,
+} from "./redaction/index.js";
 
 export interface SensitiveEgressOptions {
   /**
@@ -220,29 +241,10 @@ export function mentionsSensitive(text: string, markers: string[]): string | nul
 // Credential-value detection (used for value-flow and by the blob check)
 // ---------------------------------------------------------------------------
 
-/** Shapes that are almost certainly a credential, wherever they appear. */
-const CREDENTIAL_PATTERNS: RegExp[] = [
-  /sk-[A-Za-z0-9_-]{16,}/,
-  /sk_(?:live|test)_[A-Za-z0-9]{16,}/,
-  /AKIA[0-9A-Z]{16}/,
-  /AIza[0-9A-Za-z_-]{35}/,
-  /gh[pousr]_[A-Za-z0-9]{36,}/,
-  /xox[baprs]-[0-9A-Za-z-]{10,}/,
-  /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
-];
-
-/** `SECRET=...`, `API_KEY: ...` and friends. The value is capture group 1. */
-const KEYVAL_PATTERN =
-  /(?:SECRET|TOKEN|PASSWORD|API[_-]?KEY|ACCESS[_-]?KEY)\s*[=:]\s*["']?([^\s"']{8,})/i;
-
-/** A long unbroken base64 run. Lower confidence, so only harvested, never a gate. */
-const LONG_BASE64_PATTERN = /[A-Za-z0-9+/]{40,}={0,2}/;
-
 /** True when `text` contains something clearly credential-shaped. */
 export function looksCredentialShaped(text: string): boolean {
   if (text === "") return false;
-  for (const re of CREDENTIAL_PATTERNS) {
+  for (const re of DETECTION_PATTERNS) {
     if (re.test(text)) return true;
   }
   return KEYVAL_PATTERN.test(text);
@@ -261,7 +263,7 @@ function harvestSecrets(text: string): Set<string> {
     if (value !== undefined && value.length >= min && found.size < 64) found.add(value);
   };
 
-  for (const re of CREDENTIAL_PATTERNS) {
+  for (const re of DETECTION_PATTERNS) {
     for (const match of text.matchAll(new RegExp(re.source, "g"))) add(match[0], 12);
   }
   for (const match of text.matchAll(new RegExp(KEYVAL_PATTERN.source, "gi"))) {
@@ -285,11 +287,6 @@ function firstLeakedValueIn(
     if (best === null || seq < best.seq) best = { value, seq };
   }
   return best;
-}
-
-/** A short, non-reversible label for a secret. Never the value itself. */
-function fingerprint(value: string): string {
-  return value.slice(0, 3) + "…(" + value.length + " chars)";
 }
 
 // ---------------------------------------------------------------------------

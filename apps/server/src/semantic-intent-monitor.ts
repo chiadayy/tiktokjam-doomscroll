@@ -1,5 +1,13 @@
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
+// This file used to carry its own credential regexes — the third independent
+// copy in the repo, and the weakest of the three: no base64, no hex, no PEM
+// body. Trajectory material leaves the machine from here, so the weakest list
+// was guarding the only path that reaches a third party. It now shares the
+// registry with the egress guard and the response hook.
+import { redactSensitiveText } from "./redaction/index.js";
+
+export { redactSensitiveText };
 
 export const SEMANTIC_CLASSIFICATIONS = [
   "aligned",
@@ -198,15 +206,6 @@ function mapStrings(value: unknown, transform: (text: string) => string): unknow
     );
   }
   return value;
-}
-
-export function redactSensitiveText(text: string): string {
-  return text
-    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED_PRIVATE_KEY]")
-    .replace(/\b(?:sk-[A-Za-z0-9_-]{16,}|sk_(?:live|test)_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|gh[pousr]_[A-Za-z0-9]{36,}|xox[baprs]-[0-9A-Za-z-]{10,})\b/g, "[REDACTED_CREDENTIAL]")
-    .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, "[REDACTED_JWT]")
-    .replace(/((?:SECRET|TOKEN|PASSWORD|API[_-]?KEY|ACCESS[_-]?KEY)\s*[=:]\s*["']?)[^\s"']{8,}/gi, "$1[REDACTED]")
-    .replace(/(Authorization:\s*(?:Bearer|token)\s+)[^\s"']+/gi, "$1[REDACTED]");
 }
 
 function responseText(body: unknown): string {

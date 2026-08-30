@@ -477,7 +477,7 @@ name:
 and literal credential values (OpenAI, Stripe, AWS, GCP, GitHub, Slack keys,
 JWTs, PEM headers, `KEY=…` pairs) seen in one command's output and reused
 verbatim in a later command. Every finding carries a fingerprint
-(`sk_…(28 chars)`), never the secret itself.
+(`sk_…123727(28 chars)`), never the secret itself.
 
 **Known gaps** (each pinned in
 [`check-sensitive-egress.bypass.test.ts`](apps/server/tests/checks/check-sensitive-egress.bypass.test.ts)):
@@ -494,6 +494,49 @@ verbatim in a later command. Every finding carries a fingerprint
 - **Capability list, not a taint tracker.** A determined adversary combining an
   unlisted channel with a transformed secret can still get data out. This is a
   backstop, not a boundary.
+
+### Outbound credential redaction
+
+Every API response body of type `application/json` or `application/x-ndjson`
+passes through one Fastify `onSend` hook that replaces credential-shaped values
+with a fingerprint and reports the count in an `x-redactions` header. It is one
+global hook rather than per-route patches because per-route redaction is
+fail-open — the route added next leaks by default, which is exactly how
+`Message.content` and `agent.lastError` were missed on the first pass.
+
+The redactor is tuned for **recall** while the egress guard above is tuned for
+**precision**, and both read the same registry in
+[`apps/server/src/redaction/patterns.ts`](apps/server/src/redaction/patterns.ts).
+A redactor false positive makes one string in a log less readable; a redactor
+false negative puts a live credential on a projector.
+
+**Residual risks, stated rather than solved:**
+
+- **The secret is still on disk.** The recorded trace is written verbatim at
+  `0600` and stays that way. The threat this closes is *display and export* —
+  the browser, a screenshot, a copied response. It is not at-rest protection.
+  The file is authoritative on purpose: a fingerprint does not match the
+  patterns that produced it, so redacting on write would permanently destroy
+  value-flow evidence and make that class of finding unreplayable.
+- **Reduced trace readability is the accepted cost of biasing for recall.**
+  Measured on a real 794-event trace: before the exclusion below, 462 values
+  were redacted, of which **only 4 were the actual credential** — the other 458
+  were six Codex reasoning-item ids repeated across records. Excluding protocol
+  identifiers in *structural position* (`"id":`, `"call_id":`, `"item_id":`,
+  and known `rs_`/`call_`/`item_`/`msg_` prefixes within that key/value pair)
+  brings the same trace to **4 redactions**. The exclusion matches on context,
+  never on a bare prefix, so a credential stored under a key named `id` is
+  still redacted. What remains flagged on other runs is mostly precautionary —
+  base64 blobs and hex digests — which is why the UI says "N values redacted"
+  and never "N secrets".
+- **Workspace contents still reach the model provider.** If the agent reads
+  `.env`, those bytes go to the provider as part of its context. Redacting them
+  would break the agent's ability to do the task it was asked to do. This is
+  inherent to running a coding agent on a real workspace and is not fixable by
+  redaction.
+- **`ark-proxy` binds `0.0.0.0`.** It holds the model API key and is reachable
+  from the local network, not just from loopback. Out of scope here; noted so it
+  is not mistaken for covered.
 
 ### Agent-intent guard
 
@@ -588,7 +631,7 @@ apps/
     src/Trajectory.tsx     Readable step summary + raw JSON-RPC view of a run
     src/Reflections.tsx    "What this Agent has learned" + "Guards on this run"
   server/                  Fastify + TypeScript control plane
-    src/app.ts             HTTP routes and bearer-token hook
+    src/app.ts             HTTP routes, bearer-token hook, outbound redaction hook
     src/agent-service.ts   Lifecycle, persistence, Run execution
     src/run-turn.ts        Drives one Codex turn; the enforcement point
     src/checks.ts          Check contract + trace convenience views  ← read first
@@ -598,11 +641,12 @@ apps/
     src/check-agent-intent.ts       Reasoning-narration guard (warn-only)
     src/check-learned-watch.ts      Reflection-layer enforcement (warn-only)
     src/reflections.ts     Structured memory: validate, dedup, evict, fold
+    src/redaction/         One credential-pattern registry, two tiers, three consumers
     src/container-codex-runner.ts   Disposable container per turn; buildGuardChecks
     src/codex-runner.ts    ECS child-process runner (untraced)
     src/ark-proxy.ts       Codex → Ark Responses schema adapter
     src/trace.ts / store.ts / config.ts / workspace.ts
-    tests/{checks,reflections,runtime,server}/
+    tests/{checks,redaction,reflections,runtime,server}/
 deploy/volcengine/         Terraform: VPC, subnet, security group, ECS, EIP
 scripts/
   start-local-poc.sh       npm run poc

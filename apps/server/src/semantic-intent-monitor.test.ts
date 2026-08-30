@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { fingerprint } from "./redaction/index.js";
 import {
   ModelSemanticIntentMonitor,
   redactSensitiveText,
@@ -68,9 +69,19 @@ describe("model semantic intent monitor", () => {
     await expect(monitor.assess(input)).rejects.toThrow();
   });
 
+  // The expected shape changed here on purpose, and the reason is worth
+  // recording. This function used to own private regexes that replaced a
+  // secret with a fixed marker (`API_KEY=[REDACTED]`). It now delegates to the
+  // shared redaction registry, which substitutes a fingerprint instead.
+  //
+  // Two things improve. A fingerprint keeps the length, which is diagnostic —
+  // `[REDACTED]` cannot distinguish a 20-character key from a 2KB private key
+  // body. And redacted output now looks identical everywhere it surfaces: in a
+  // finding's message, in the trajectory view, and here. The old markers were
+  // a fourth spelling of "we took something out".
   it("redacts credential-shaped values before monitor use", () => {
     expect(redactSensitiveText("API_KEY=abcdefghijklmnop1234")).toBe(
-      "API_KEY=[REDACTED]",
+      "API_KEY=" + fingerprint("abcdefghijklmnop1234"),
     );
     expect(redactSensitiveText("Authorization: Bearer secret-value-123")).not.toContain(
       "secret-value-123",
