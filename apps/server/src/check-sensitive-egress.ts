@@ -34,7 +34,13 @@
 // steers and evidence carry a fingerprint (`sk_…123727(28 chars)`) and seqs,
 // never the value itself.
 
-import { commandsOf, readsOf, type Check, type Finding } from "./checks.js";
+import {
+  commandsOf,
+  readsOf,
+  type Check,
+  type CommandEvent,
+  type Finding,
+} from "./checks.js";
 import type { TraceRecord } from "./trace.js";
 // The credential shapes this guard gates on, and the fingerprint it reports
 // them with, both live in ./redaction. The direction of that import is
@@ -204,6 +210,97 @@ export function extractDestination(command: string): string | null {
   if (dns?.[1] !== undefined) return dns[1];
 
   return null;
+}
+
+export interface AttributedEgressClause {
+  text: string;
+  verdict: EgressVerdict;
+  destination: string | null;
+}
+
+/**
+ * Associate evidence with one obvious egress clause, or decline to guess.
+ * Structured Runtime action commands win when there are multiple boundaries;
+ * otherwise this recognizes only basic shell separators, not shell grammar.
+ */
+export function attributedEgressClause(
+  command: CommandEvent,
+  secretWasRead: boolean,
+  containsEvidence: (clause: string) => boolean,
+): AttributedEgressClause | null {
+  const candidates = commandClauses(command)
+    .map((text) => ({ text, verdict: classifyEgress(text, secretWasRead) }))
+    .filter(({ text, verdict }) => verdict.egress && containsEvidence(text));
+  if (candidates.length !== 1) return null;
+  const candidate = candidates[0]!;
+  return {
+    ...candidate,
+    destination: unambiguousDestination(candidate.text),
+  };
+}
+
+function commandClauses(command: CommandEvent): string[] {
+  const structured = command.actions
+    .map((entry) =>
+      entry !== null && typeof entry === "object"
+        ? (entry as Record<string, unknown>).command
+        : undefined,
+    )
+    .filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "")
+    .map((entry) => entry.trim());
+  if (new Set(structured).size > 1) return [...new Set(structured)];
+  return splitObviousShellClauses(command.command);
+}
+
+function splitObviousShellClauses(command: string): string[] {
+  const trimmed = command.trim();
+  const wrapper = /^(?:\/bin\/)?(?:ba|z)?sh\s+-lc\s+(['"])([\s\S]*)\1$/.exec(trimmed);
+  const body = wrapper?.[2] ?? trimmed;
+  const clauses: string[] = [];
+  let start = 0;
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+
+  const push = (end: number): void => {
+    const clause = body.slice(start, end).trim();
+    if (clause !== "") clauses.push(clause);
+  };
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index]!;
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = quote === null ? char : quote === char ? null : quote;
+      continue;
+    }
+    if (quote !== null) continue;
+    const pair = body.slice(index, index + 2);
+    const separatorLength =
+      pair === "&&" || pair === "||" ? 2 : char === ";" || char === "\n" ? 1 : 0;
+    if (separatorLength === 0) continue;
+    push(index);
+    index += separatorLength - 1;
+    start = index + 1;
+  }
+  if (quote !== null || escaped) return [body];
+  push(body.length);
+  return clauses.length > 0 ? clauses : [body];
+}
+
+function unambiguousDestination(command: string): string | null {
+  const httpHosts = new Set(
+    [...command.matchAll(/\bhttps?:\/\/([^\s"'\/\\]+)/gi)]
+      .map((match) => match[1])
+      .filter((host): host is string => host !== undefined),
+  );
+  if (httpHosts.size > 1) return null;
+  return extractDestination(command);
 }
 
 /**
@@ -389,13 +486,24 @@ export function sensitiveEgressCheck(options: Partial<SensitiveEgressOptions> = 
         if (handled.has(key)) continue;
         handled.add(key);
 
-        const destination = extractDestination(command.command);
+        const priorRead = sensitiveReads.find((entry) => entry.seq < command.seq);
+        const leak = firstLeakedValueIn(command.command, leakedValues);
+        const attribution = attributedEgressClause(
+          command,
+          secretWasReadBefore,
+          leak !== null
+            ? (clause) => clause.includes(leak.value)
+            : inlineMarker !== null
+              ? (clause) => mentionsSensitive(clause, markers) !== null
+              : () => true,
+        );
+        const destination = attribution?.destination ?? null;
         const where = destination ?? UNMARKED_DESTINATION;
-        const channel: string = verdict.channel ?? UNMARKED_CHANNEL;
+        const attributedChannel = attribution?.verdict.channel ?? null;
+        const channel: string = attributedChannel ?? UNMARKED_CHANNEL;
 
         // Value flow takes precedence: the literal secret bytes are right here
         // in the command, wherever they were read from.
-        const leak = firstLeakedValueIn(command.command, leakedValues);
         if (leak !== null) {
           const print = fingerprint(leak.value);
           findings.push({
@@ -407,20 +515,16 @@ export function sensitiveEgressCheck(options: Partial<SensitiveEgressOptions> = 
             message:
               `Command at seq ${command.seq} carries a workspace secret (${print}) over ` +
               `${channel} to ${where}. The value first appeared in command output at seq ${leak.seq}.`,
-            steer:
-              `Stop. Do not run that command. It sends a credential read earlier this run ` +
-              `(${print}) out over ${channel} to ${where}. Moving a workspace secret off this ` +
-              `machine is never part of the task, whatever led you here — skip this step and ` +
-              `carry on with the original task.`,
-            facts: egressFacts(verdict.channel, destination, null, "sensitive-read"),
+            facts: egressFacts(attributedChannel, destination, null, "sensitive-read"),
           });
           continue;
         }
 
-        const priorRead = sensitiveReads.find((entry) => entry.seq < command.seq);
         if (inlineMarker === null && priorRead === undefined) continue;
 
-        const source = inlineMarker ?? priorRead?.path ?? "a workspace secret";
+        const attributedSource =
+          attribution === null ? null : mentionsSensitive(attribution.text, markers);
+        const source = attributedSource ?? inlineMarker ?? priorRead?.path ?? "a workspace secret";
         const evidence =
           inlineMarker === null && priorRead !== undefined
             ? [priorRead.seq, command.seq]
@@ -433,15 +537,10 @@ export function sensitiveEgressCheck(options: Partial<SensitiveEgressOptions> = 
           seq: command.seq,
           evidence,
           message: `Command at seq ${command.seq} sends ${source} over ${channel} to ${where}.`,
-          steer:
-            `Stop. Do not run that command. It moves ${source} out of this workspace over ` +
-            `${channel} to ${where}, and that data holds credentials. Moving a workspace secret ` +
-            `off this machine is never part of the task, whatever led you here — skip this step ` +
-            `and carry on with the original task.`,
           facts: egressFacts(
-            verdict.channel,
+            attributedChannel,
             destination,
-            inlineMarker ?? priorRead?.path ?? null,
+            attributedSource ?? inlineMarker ?? priorRead?.path ?? null,
             priorRead === undefined ? "none" : "sensitive-read",
           ),
         });

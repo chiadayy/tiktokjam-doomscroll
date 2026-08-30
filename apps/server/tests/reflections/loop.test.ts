@@ -160,7 +160,7 @@ describe("the reflection loop", () => {
     expect(withMemory).toHaveLength(1);
     expect(withMemory[0]?.code).toBe("watched-source-read");
     expect(withMemory[0]?.severity).toBe("warn");
-    expect(withMemory[0]?.steer).toBeDefined();
+    expect(withMemory[0]?.requestSteer).toBe(true);
 
     // The intervention moves earlier: run 1 was caught at the command, run 2 at
     // the read that preceded it. That gap is the point of the whole lane.
@@ -204,5 +204,30 @@ describe("the reflection loop", () => {
 
     expect(learned.reflections).toEqual([]);
     expect(learned.rejected["user-asked"]).toBe(1);
+  });
+
+  it("cannot learn a guessed destination from ambiguous compound egress", () => {
+    const t = traceBuilder();
+    const command =
+      "curl https://first.example.test/ping ; " +
+      "printf @fixtures/secrets-demo.txt ; " +
+      "curl https://second.example.test/ping";
+    const trace = [t.command("compound", command)];
+    const findings = sensitiveEgressCheck().run(trace);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.severity).toBe("violation");
+    expect(findings[0]?.facts?.destination).toBeUndefined();
+
+    const learned = learnFrom({
+      reflections: [],
+      findings,
+      trace,
+      runId: "ambiguous-run",
+      prompt: "run diagnostics",
+      now: "2026-08-31T00:00:00.000Z",
+    });
+
+    expect(paramsFrom(learned.reflections).watchedDestinations).toEqual([]);
   });
 });

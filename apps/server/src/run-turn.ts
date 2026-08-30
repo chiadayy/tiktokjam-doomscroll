@@ -6,12 +6,11 @@
 // the default.
 //
 // When `checks` are passed it becomes the enforcement point. After each
-// recorded action the checks run over the trace so far; a `violation` with a
-// `steer` string is sent into the live turn as a correction, and a `violation`
-// on a command still waiting for permission is refused outright with `cancel`
-// (an atomic decline-and-interrupt). An optional task-aware controller reviews
-// only meaningful semantic checkpoints. This file remains the sole place that
-// carries either verdict onto the wire.
+// recorded action the checks run over the trace so far. Warnings may steer;
+// definite violations at an approval boundary decline that action and send one
+// standardized correction. A second distinct blocked action interrupts. An
+// optional task-aware controller reviews only meaningful semantic checkpoints.
+// This file remains the sole place that carries either verdict onto the wire.
 
 import type { JsonRpcConnection } from "./codex-app-server-client.js";
 import type { AskForApproval } from "./codex-protocol.js";
@@ -24,15 +23,21 @@ import {
 } from "./checks.js";
 import type { IntentController, IntentControllerResult } from "./intent-controller.js";
 import type { SemanticProposedAction } from "./semantic-intent-monitor.js";
+import {
+  remediationForFinding,
+  steeringPrompt,
+  type RemediationCategory,
+} from "./steering-policy.js";
 import type { TraceRecord } from "./trace.js";
 import type { RunUsage } from "./types.js";
 
 /**
- * Most corrections one turn may receive from the deterministic checks.
+ * Most soft warning corrections one turn may receive from deterministic checks.
  *
  * Small on purpose. A steer is not a log line — it is text pushed into the
  * conversation the Agent is mid-way through, so several in a row stop reading
- * as a correction and start reading as a new task.
+ * as a correction and start reading as a new task. The single recovery steer
+ * after the first blocked action is reserved separately from this budget.
  */
 export const MAX_STEERS_PER_TURN = 3;
 
@@ -59,12 +64,12 @@ export interface TurnOptions {
    */
   denyNetwork?: boolean;
   /**
-   * What to do when a check returns a `violation` on an action that is already
-   * running (seen at `item/started` or later):
+   * Legacy response when a check returns a `violation` and no verified effect
+   * gate is active:
    *   "interrupt"  end the turn at once with `turn/interrupt`. The default.
    *   "steer-only" inject the correction text and let the turn continue.
-   * A command still waiting on approval is always refused with `decline`
-   * regardless of this, since that needs no interrupt.
+   * A command still waiting on approval is always refused with `decline` and
+   * receives the shared action-block correction regardless of this option.
    */
   onViolation?: "interrupt" | "steer-only";
   /** Optional task-aware semantic policy. Separate from deterministic checks. */
@@ -77,6 +82,8 @@ export interface TurnOptions {
    * OS/runtime boundary.
    */
   semanticEnforcement?: boolean;
+  /** The Runtime is expected to approval-gate writes and external effects. */
+  effectGating?: boolean;
 }
 
 export interface TurnOutcome {
@@ -96,13 +103,14 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   const onViolation = options.onViolation ?? "interrupt";
   const intentController = options.intentController;
   const semanticEnforcement = options.semanticEnforcement ?? false;
+  const effectGating = options.effectGating ?? semanticEnforcement;
 
   // Collected as notifications arrive.
   const messages: string[] = [];
   let usage: RunUsage | null = null;
   let turnFailure: string | null = null;
 
-  // Findings the checks have produced, and the keys of ones already acted on.
+  // Findings the checks have produced, and the action-specific keys already recorded.
   const findings: Finding[] = [];
   const actedOn = new Set<string>();
   let intervened = false;
@@ -116,38 +124,40 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   // item/started before this request, so completion is the first reliable
   // point at which a missing gate can be diagnosed without false positives.
   const approvalGates = new Set<string>();
+  // Deterministic and semantic blocks share this set. Stable item IDs prevent
+  // multiple findings for one action from counting as multiple attempts.
+  const blockedActions = new Set<string>();
 
-  // A violation fires once per turn (coarser key); anything lower is per record.
-  const keyOf = (finding: Finding): string =>
-    finding.severity === "violation"
-      ? `${finding.check}:${finding.code}`
-      : `${finding.check}:${finding.code}:${finding.seq}`;
+  const keyOf = (finding: Finding, trace: TraceRecord[]): string => {
+    const action = actionIdentityAt(finding.seq, trace);
+    return `${finding.check}:${finding.code}:${action}`;
+  };
 
-  // Every steer is text injected into the turn the agent is still working in,
-  // so it costs tokens and competes with the task for attention. Violations are
-  // deduped once per turn, but warns are keyed per record — an Agent that reads
-  // four watched files produces four of them. Cap the deterministic checks so a
-  // memory with several matches corrects the Agent rather than talking over it.
-  // Findings past the cap are still recorded; only delivery stops.
-  let steersSent = 0;
+  // Every soft steer is text injected into the live turn, so it costs tokens
+  // and competes with the task for attention. Warns are keyed per record — an
+  // Agent that reads four watched files produces four of them. Cap those soft
+  // corrections without consuming the separately reserved recovery steer.
+  // Findings past the soft cap are still recorded; only delivery stops.
+  let softSteersSent = 0;
 
-  function sendSteerWithinBudget(text: string): void {
-    if (steersSent >= MAX_STEERS_PER_TURN) return;
-    steersSent += 1;
+  function sendSoftSteerWithinBudget(text: string): void {
+    if (softSteersSent >= MAX_STEERS_PER_TURN) return;
+    softSteersSent += 1;
     sendSteer(text);
   }
 
   /**
    * Run the checks over `trace` and act on anything new.
    *
-   * @param enforce when true, a finding triggers the configured response. The
-   *   approval handler passes false because it answers on the wire itself.
+   * @param enforceViolations when true, a violation triggers the legacy
+   *   ungated response. Warnings that explicitly request steering are always
+   *   eligible for the bounded shared correction.
    */
-  function review(trace: TraceRecord[], enforce: boolean): Finding[] {
+  function review(trace: TraceRecord[], enforceViolations: boolean): Finding[] {
     if (checks.length === 0) return [];
     const found = runChecks(checks, trace);
     for (const finding of found) {
-      const key = keyOf(finding);
+      const key = keyOf(finding, trace);
       if (actedOn.has(key)) continue;
       actedOn.add(key);
       findings.push(finding);
@@ -155,23 +165,26 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
       // A warn cannot refuse an action or end the turn, but it can still
       // correct the agent — and steering is the only way anything below a
       // violation reaches the agent at all. The reflection layer is entirely
-      // warn-only by design, so without this its steer text is written, stored
-      // and never delivered: the guard notices the repeat and says nothing.
-      //
-      // Honouring `steer` on its own merit is also what checks.ts already
-      // documents ("leave it unset to record the finding without intervening"),
-      // rather than gating on severity as this did before.
+      // warn-only by design, so without this the guard notices the repeat and
+      // says nothing. The detector requests correction; the shared policy owns
+      // the actual text.
       if (finding.severity !== "violation") {
-        if (enforce && finding.steer !== undefined) sendSteerWithinBudget(finding.steer);
+        const category = remediationForFinding(finding);
+        if ((finding.requestSteer === true || finding.steer !== undefined) && category !== null) {
+          sendSoftSteerWithinBudget(steeringPrompt(options.prompt, category, false));
+        }
         continue;
       }
 
+      if (!enforceViolations) continue;
       intervened = true;
-      if (!enforce) continue;
       if (onViolation === "interrupt") {
         sendInterrupt();
-      } else if (finding.steer !== undefined) {
-        sendSteerWithinBudget(finding.steer);
+      } else {
+        const category = remediationForFinding(finding);
+        if (category !== null) {
+          sendSoftSteerWithinBudget(steeringPrompt(options.prompt, category, false));
+        }
       }
     }
     return found;
@@ -229,30 +242,66 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
    * refused with `decline`, which drops that one action and lets the agent
    * carry on with the rest of the task (see codex-protocol.ts).
    */
-  function deterministicViolationForApproval(
+  function deterministicFindingsForApproval(
+    kind: "command" | "file_change",
     params: Record<string, unknown>,
-  ): Finding | undefined {
-    if (checks.length === 0) return undefined;
-    const pending = pendingCommandRecord(params, records);
+  ): Finding[] {
+    if (checks.length === 0) return [];
+    const pending = kind === "command" ? pendingCommandRecord(params, records) : null;
     const trace = pending === null ? records : [...records, pending];
-    return review(trace, false).find(
-      (finding) => finding.severity === "violation",
+    review(trace, false);
+    const actionKey = approvalActionIdentity(kind, params, trace);
+    return runChecks(checks, trace).filter(
+      (finding) => actionIdentityAt(finding.seq, trace) === actionKey,
     );
   }
 
   function markApprovalGate(params: Record<string, unknown>): void {
     const itemId = typeof params.itemId === "string" ? params.itemId : null;
-    if (semanticEnforcement && itemId !== null) approvalGates.add(itemId);
+    if (effectGating && itemId !== null) approvalGates.add(itemId);
   }
 
-  function decideWithoutSemantic(params: Record<string, unknown>, id: number | string): void {
-    const violation = deterministicViolationForApproval(params);
+  function blockAction(
+    kind: "command" | "file_change",
+    params: Record<string, unknown>,
+    id: number | string,
+    category: RemediationCategory,
+    trustedSteer?: string,
+  ): void {
+    const actionKey = approvalActionIdentity(kind, params, records);
+    const isNewAttempt = !blockedActions.has(actionKey);
+    rpc.reply(id, { decision: "decline" });
+    intervened = true;
+    if (!isNewAttempt) return;
+
+    const priorAttempts = blockedActions.size;
+    blockedActions.add(actionKey);
+    if (priorAttempts > 0) {
+      sendInterrupt();
+      return;
+    }
+    // Recovery has its own single-use allowance: the first distinct blocked
+    // action always receives this correction, while the second interrupts.
+    sendSteer(trustedSteer ?? steeringPrompt(options.prompt, category, true));
+  }
+
+  function decideWithoutSemantic(
+    kind: "command" | "file_change",
+    params: Record<string, unknown>,
+    id: number | string,
+  ): void {
+    const deterministic = deterministicFindingsForApproval(kind, params);
+    const violation = deterministic.find((finding) => finding.severity === "violation");
     if (violation === undefined) {
       rpc.reply(id, { decision: "accept" });
       return;
     }
-    intervened = true;
-    rpc.reply(id, { decision: "decline" });
+    blockAction(
+      kind,
+      params,
+      id,
+      remediationForFinding(violation) ?? "scope_expansion",
+    );
   }
 
   async function decideWithSemantic(
@@ -264,10 +313,15 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     // the risk state before the action is approved.
     await semanticQueue;
 
-    const violation = deterministicViolationForApproval(params);
+    const deterministic = deterministicFindingsForApproval(kind, params);
+    const violation = deterministic.find((finding) => finding.severity === "violation");
     if (violation !== undefined) {
-      intervened = true;
-      rpc.reply(id, { decision: "decline" });
+      blockAction(
+        kind,
+        params,
+        id,
+        remediationForFinding(violation) ?? "scope_expansion",
+      );
       return;
     }
 
@@ -279,7 +333,10 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
 
     const traceAtCheckpoint = [...records];
     const reviewAndApply = semanticQueue.then(async () => {
-      const result = await intentController.reviewAction(traceAtCheckpoint, action);
+      const forceReview = deterministic.some(
+        (finding) => finding.requestSemanticReview === true,
+      );
+      const result = await intentController.reviewAction(traceAtCheckpoint, action, forceReview);
       if (result.finding !== undefined) findings.push(result.finding);
       if (result.decision === "allow" || result.decision === "steer") {
         rpc.reply(id, { decision: "accept" });
@@ -292,13 +349,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
 
       // Refuse the concrete action first. The correction then tells Codex how
       // to continue instead of retrying the objective through another tool.
-      intervened = true;
-      rpc.reply(id, { decision: "decline" });
-      if (result.decision === "interrupt") {
-        sendInterrupt();
-      } else if (result.steer !== undefined) {
-        sendSteer(result.steer);
-      }
+      blockAction(kind, params, id, "scope_expansion", result.steer);
     });
     semanticQueue = reviewAndApply;
     await reviewAndApply;
@@ -312,7 +363,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     // our reply, unlike an item/started or item/completed notification.
     markApprovalGate(params);
     return intentController === undefined
-      ? decideWithoutSemantic(params, id)
+      ? decideWithoutSemantic("command", params, id)
       : decideWithSemantic("command", params, id);
   }
 
@@ -320,44 +371,81 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     params: Record<string, unknown>,
     id: number | string,
   ): void | Promise<void> {
-    // File changes are explicitly paused at this request under semantic
-    // enforcement, even though their item/started notification comes first.
+    // Effect-gated file changes pause here even though their item/started
+    // notification comes first.
     markApprovalGate(params);
     return intentController === undefined
-      ? decideWithoutSemantic(params, id)
+      ? decideWithoutSemantic("file_change", params, id)
       : decideWithSemantic("file_change", params, id);
   }
 
   rpc.onRequest("item/commandExecution/requestApproval", commandApproval);
   rpc.onRequest("item/fileChange/requestApproval", fileChangeApproval);
 
-  // Review the moment a command is announced, before it has finished, so an
-  // interrupt has a chance to land before the command completes.
+  // Under effect gating, item/started announces a proposal; the approval
+  // request is the enforcement point. Without that boundary, retain the
+  // legacy immediate response for a definitely unsafe running action.
   rpc.on("item/started", function reviewOnStart() {
-    review(records, true);
+    review(records, !effectGating);
   });
 
   rpc.on("item/completed", function collectAgentMessage(params) {
     // Backstop: catch anything only visible once the action completed.
-    const deterministic = review(records, true);
+    const deterministic = review(records, !effectGating);
 
     const item = params.item as Record<string, unknown> | undefined;
     if (item === undefined) return;
-    if (semanticEnforcement && item.type === "fileChange") {
+    if (effectGating && item.type === "fileChange") {
       const itemId = typeof item.id === "string" ? item.id : null;
       if (itemId !== null && !approvalGates.has(itemId)) {
         // This does not claim to undo an already-completed mutation. It makes
         // a broken Runtime/protocol assumption visible and stops the turn
         // before it can perform more work.
         findings.push({
-          check: "semantic-enforcement",
+          check: "runtime-enforcement",
           code: "ungated-file-change",
           severity: "violation",
           seq: latestItemSeq(records, item),
           evidence: [latestItemSeq(records, item)],
           message:
-            "Semantic enforcement expected this file change to wait for item/fileChange/requestApproval, but it completed without that gate. The turn was interrupted; any completed change requires audit or rollback.",
+            "Effect gating expected this file change to wait for item/fileChange/requestApproval, but it completed without that gate. The turn was interrupted; the completed change was not rolled back.",
           metadata: { checkpoint: "file_change", controllerDecision: "interrupt" },
+        });
+        intervened = true;
+        sendInterrupt();
+      }
+    }
+    if (effectGating && item.type === "commandExecution") {
+      const itemId = typeof item.id === "string" ? item.id : null;
+      const seq = latestItemSeq(records, item);
+      const unsafe = runChecks(checks, records).some(
+        (finding) =>
+          finding.severity === "violation" &&
+          actionIdentityAt(finding.seq, records) === actionIdentity(itemId, seq),
+      );
+      if (unsafe && itemId !== null && !approvalGates.has(itemId)) {
+        const completed = commandsOf(records)
+          .filter((command) => command.itemId === itemId && command.phase === "completed")
+          .at(-1);
+        const commandNotFoundObserved =
+          /\b(?:command not found|not recognized as an internal or external command)\b/i.test(
+            completed?.output ?? "",
+          );
+        findings.push({
+          check: "runtime-enforcement",
+          code: "ungated-command",
+          severity: "violation",
+          seq,
+          evidence: [seq],
+          message:
+            "Effect gating expected this unsafe command to wait for item/commandExecution/requestApproval, but the command completed without that gate. The turn was interrupted because the pre-execution enforcement boundary was not observed. Whether the protected external effect actually occurred cannot be established from this event, and no rollback is claimed.",
+          metadata: {
+            checkpoint: "command",
+            controllerDecision: "interrupt",
+            exitCode: completed?.exitCode ?? null,
+            commandNotFoundObserved,
+            protectedEffect: "unknown",
+          },
         });
         intervened = true;
         sendInterrupt();
@@ -486,6 +574,26 @@ function readItemId(record: TraceRecord): string | null {
   const inner = payload?.params as Record<string, unknown> | undefined;
   const item = inner?.item as Record<string, unknown> | undefined;
   return typeof item?.id === "string" ? item.id : null;
+}
+
+function actionIdentity(itemId: string | null, seq: number): string {
+  return itemId === null || itemId === "" ? `seq:${seq}` : `item:${itemId}`;
+}
+
+function actionIdentityAt(seq: number, records: TraceRecord[]): string {
+  const record = records.find((entry) => entry.seq === seq);
+  return actionIdentity(record === undefined ? null : readItemId(record), seq);
+}
+
+function approvalActionIdentity(
+  kind: "command" | "file_change",
+  params: Record<string, unknown>,
+  records: TraceRecord[],
+): string {
+  const itemId = typeof params.itemId === "string" ? params.itemId : null;
+  if (itemId !== null && itemId !== "") return actionIdentity(itemId, 0);
+  const action = proposedActionOf(kind, params, records);
+  return actionIdentity(null, action?.seq ?? records.length + 1);
 }
 
 function latestItemSeq(records: TraceRecord[], item: Record<string, unknown>): number {
