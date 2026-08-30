@@ -212,10 +212,28 @@ export function extractDestination(command: string): string | null {
   return null;
 }
 
+export interface EgressClause {
+  text: string;
+  verdict: EgressVerdict;
+  destination: string | null;
+}
+
 export interface AttributedEgressClause {
   text: string;
   verdict: EgressVerdict;
   destination: string | null;
+}
+
+/**
+ * The conservative command boundaries shared by egress-aware checks. Runtime
+ * structured actions take precedence; otherwise recognize only obvious shell
+ * separators, not general shell syntax.
+ */
+export function egressClauses(command: CommandEvent, secretWasRead: boolean): EgressClause[] {
+  return commandClauses(command)
+    .map((text) => ({ text, verdict: classifyEgress(text, secretWasRead) }))
+    .filter(({ verdict }) => verdict.egress)
+    .map(({ text, verdict }) => ({ text, verdict, destination: unambiguousDestination(text) }));
 }
 
 /**
@@ -248,6 +266,8 @@ function commandClauses(command: CommandEvent): string[] {
     )
     .filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "")
     .map((entry) => entry.trim());
+  // Multiple Runtime actions are already trustworthy boundaries. A single
+  // action can still contain a compound shell command, so split it below.
   if (new Set(structured).size > 1) return [...new Set(structured)];
   return splitObviousShellClauses(command.command);
 }

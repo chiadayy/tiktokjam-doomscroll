@@ -787,8 +787,84 @@ textarea:focus {
 }
 
 .message-assistant .message-body {
-  padding-left: 14px;
-  border-left: 2px solid #8a76e7;
+  max-width: 760px;
+  padding: 15px 18px;
+  border: 1px solid #e8e4f6;
+  border-left: 3px solid #8a76e7;
+  border-radius: 4px 13px 13px 4px;
+  background: linear-gradient(135deg, #fff 0%, #fbfaff 100%);
+  box-shadow: 0 5px 18px rgba(57, 48, 103, 0.045);
+}
+
+.message-body-rich {
+  white-space: normal;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.message-body-rich > :first-child { margin-top: 0; }
+.message-body-rich > :last-child { margin-bottom: 0; }
+
+.message-body-rich p {
+  margin: 0 0 10px;
+}
+
+.message-body-rich h3,
+.message-body-rich h4 {
+  margin: 16px 0 7px;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.message-body-rich h3 { font-size: 14px; }
+.message-body-rich h4 { font-size: 12.5px; }
+
+.message-list {
+  margin: 7px 0 12px;
+  padding-left: 20px;
+}
+
+.message-list li {
+  margin: 4px 0;
+  padding-left: 2px;
+}
+
+.message-list-depth-1 { margin-left: 18px !important; }
+.message-list-depth-2 { margin-left: 36px !important; }
+
+.message-body-rich code {
+  padding: 1px 5px;
+  border: 1px solid #e8e4f2;
+  border-radius: 5px;
+  background: #f6f4fb;
+  color: #4d3c8d;
+  font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.message-code-block {
+  margin: 10px 0 13px;
+  padding: 11px 13px;
+  overflow-x: auto;
+  border: 1px solid #e4e1ed;
+  border-radius: 9px;
+  background: #292733;
+  color: #f3f1fa;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.message-code-block code {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+}
+
+.message-body-rich a {
+  color: var(--purple-dark);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
 }
 
 .thinking {
@@ -1604,4 +1680,171 @@ textarea:focus {
   font-size: 11px;
   line-height: 1.5;
   color: var(--ink);
+}
+
+/* ---------------------------------------------------------------
+   Playground information hierarchy: activity first, audit on demand.
+   --------------------------------------------------------------- */
+
+.activity-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--purple);
+  box-shadow: 0 0 0 4px rgba(105, 84, 217, 0.12);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.activity-collapsed {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 0;
+  background: #fff;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.activity-collapsed:hover { background: var(--paper); }
+.activity-collapsed strong { margin-left: auto; color: var(--purple-dark); }
+.activity-complete { color: var(--green); font-weight: 700; }
+
+.activity-intervention-summary {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(201, 133, 22, 0.2);
+  background: #fff9ec;
+  color: #77520f;
+  font-size: 11px;
+}
+
+.trajectory-list .step-title {
+  display: block;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.activity-warning { background: #fffaf0; }
+.activity-blocked { background: #fff5f3; }
+.activity-warning .step-icon { color: #b8750c; }
+.activity-blocked .step-icon { color: var(--red); }
+.activity-running .step-icon { color: var(--purple); }
+
+.activity-row-details { margin-top: 4px; }
+.activity-row-details summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.technical-details { background: #fff; }
+
+.technical-trace-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.technical-trace-head > span:not(.trajectory-redactions) {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.technical-trace-head .trajectory-redactions { margin-left: auto; }
+
+.run-safety {
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper) 92%, var(--purple) 8%);
+}
+
+.run-safety > summary {
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.run-safety > summary span {
+  margin-left: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.finding-metadata {
+  max-height: 150px;
+  overflow: auto;
+  margin: 7px 0 0;
+  padding: 7px;
+  background: #fff;
+  border: 1px solid var(--line);
+  font-size: 10px;
+  white-space: pre-wrap;
+}
+
+.safety-memory-updated {
+  margin: 7px 0 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.agent-header > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.reflections.safety-memory {
+  max-width: 760px;
+  margin: 8px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.safety-memory > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.safety-memory[open] {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.safety-memory[open] > summary {
+  display: flex;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+
+@media (max-width: 760px) {
+  .trajectory-head { flex-wrap: wrap; }
+  .trajectory-count { margin-left: auto; }
+  .activity-collapsed { flex-wrap: wrap; }
+  .activity-collapsed strong { width: 100%; margin-left: 0; }
+  .activity-intervention-summary { flex-direction: column; }
 }

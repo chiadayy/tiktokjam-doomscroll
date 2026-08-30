@@ -183,6 +183,9 @@ function addOrUpdateItemStep(
 
   if (existing !== undefined) {
     updateOutcome(existing, item);
+    if (record.method === "item/completed" && existing.outcome === null) {
+      existing.outcome = "ok";
+    }
     return;
   }
 
@@ -267,7 +270,8 @@ function updateOutcome(step: TraceStep, item: Record<string, unknown>): void {
 }
 
 /**
- * The agent's reasoning narration, trimmed to the first few lines for the list.
+ * The agent's reasoning narration, retained for technical inspection. The
+ * default activity view deliberately renders only a compact Reasoning row.
  * The runtime's reasoning item is not a fixed shape: the text may be `text`, or
  * spread across `summary` / `content` parts that are strings or `{ text }`
  * objects. Pull a string out of whichever is there.

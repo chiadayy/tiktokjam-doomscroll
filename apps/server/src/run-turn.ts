@@ -171,7 +171,9 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
       if (finding.severity !== "violation") {
         const category = remediationForFinding(finding);
         if ((finding.requestSteer === true || finding.steer !== undefined) && category !== null) {
-          sendSoftSteerWithinBudget(steeringPrompt(options.prompt, category, false));
+          sendSoftSteerWithinBudget(
+            steeringPrompt(options.prompt, category, false, finding.steerStrength),
+          );
         }
         continue;
       }

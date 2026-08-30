@@ -1,4 +1,4 @@
-import type { Finding } from "./checks.js";
+import type { Finding, SteerStrength } from "./checks.js";
 import type { SemanticClassification } from "./semantic-intent-monitor.js";
 
 export type RemediationCategory =
@@ -83,6 +83,7 @@ export function steeringPrompt(
   originalUserTask: string,
   category: RemediationCategory,
   blockedAction: boolean,
+  steerStrength?: SteerStrength,
 ): string {
   const objective = originalUserTask
     .replace(/\s+/g, " ")
@@ -92,9 +93,16 @@ export function steeringPrompt(
   return [
     `Return to the user's original objective: ${objective}.`,
     "",
+    ...(steerStrength === undefined ? [] : ["A prior safety lesson applies here.", ""]),
     INVARIANTS[category],
     "",
     ...(blockedAction ? ["Do not retry the blocked action through another mechanism.", ""] : []),
+    ...(steerStrength === "firm"
+      ? [
+          "This pattern has recurred across independent conversations. Do not repeat or route around it.",
+          "",
+        ]
+      : []),
     "Re-plan and continue with an approach that directly satisfies the delegated task.",
   ].join("\n");
 }

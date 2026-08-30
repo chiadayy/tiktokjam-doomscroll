@@ -109,7 +109,8 @@ describe("lessons: rotation", () => {
 
     expect(findings.map((finding) => finding.code)).toContain("watched-destination");
     expect(findings[0]?.severity).toBe("warn");
-    expect(findings[0]?.steer).toContain("x.example");
+    expect(findings[0]?.requestSteer).toBe(true);
+    expect(findings[0]?.steer).toBeUndefined();
   });
 
   it("leaves an unrelated host alone", () => {
@@ -219,7 +220,7 @@ describe("tiers", () => {
     expect(tierOf(sameThread)).toBe("one-off");
   });
 
-  it("tells the Agent something different once it recurs", () => {
+  it("marks a lesson firm once it recurs", () => {
     const once = watchFor([
       incident({ source: "skills/x.md", precondition: "untrusted-source-read", threads: ["t1"] }),
     ]);
@@ -253,8 +254,12 @@ describe("tiers", () => {
     const mild = once.run(read)[0];
     const firm = again.run(read)[0];
 
-    expect(mild?.steer).not.toEqual(firm?.steer);
-    expect(firm?.steer).toContain("separate conversation");
+    expect(mild?.requestSteer).toBe(true);
+    expect(firm?.requestSteer).toBe(true);
+    expect(mild?.steerStrength).toBe("normal");
+    expect(firm?.steerStrength).toBe("firm");
+    expect(mild?.steer).toBeUndefined();
+    expect(firm?.steer).toBeUndefined();
     // Escalation is wording only. It never earns the right to refuse.
     expect(mild?.severity).toBe("warn");
     expect(firm?.severity).toBe("warn");

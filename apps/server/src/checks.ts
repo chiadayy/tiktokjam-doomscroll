@@ -25,6 +25,7 @@ import type { TraceRecord } from "./trace.js";
 // ---------------------------------------------------------------------------
 
 export type Severity = "info" | "warn" | "violation";
+export type SteerStrength = "normal" | "firm";
 
 export interface Finding {
   /** Name of the check that produced this. */
@@ -55,6 +56,8 @@ export interface Finding {
   steer?: string;
   /** Ask live enforcement for the shared category-based correction. */
   requestSteer?: boolean;
+  /** Tone for a centralized correction when `requestSteer` is set. */
+  steerStrength?: SteerStrength;
   /** Ask the task-aware controller to review this specific pending action. */
   requestSemanticReview?: boolean;
   /** Compact derived audit data. Never put raw secrets or model chain-of-thought here. */
