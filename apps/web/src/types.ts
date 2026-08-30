@@ -34,6 +34,8 @@ export interface Finding {
   evidence: number[];
   message: string;
   steer?: string;
+  /** Compact derived audit data emitted by semantic guard findings. */
+  metadata?: Record<string, unknown>;
   facts?: Record<string, string>;
 }
 

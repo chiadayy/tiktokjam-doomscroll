@@ -9,7 +9,10 @@ import type { AgentRunner, RunnerRequest, RunnerResult } from "../../src/types.j
 import { WorkspaceManager } from "../../src/workspace.js";
 
 class FakeRunner implements AgentRunner {
+  lastRequest: RunnerRequest | null = null;
+
   async run(request: RunnerRequest): Promise<RunnerResult> {
+    this.lastRequest = request;
     return {
       output: "Completed: " + request.prompt,
       threadId: request.threadId ?? "fake-thread",
@@ -78,6 +81,22 @@ describe("Agent lifecycle", () => {
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(messages[1]?.content).toContain("write hello world");
     expect(service.getAgent(agent.id).codexThreadId).toBe("fake-thread");
+  });
+
+  it("passes the original prompt and Agent instructions as trusted task context", async () => {
+    const runner = new FakeRunner();
+    const service = await makeService(runner);
+    const agent = await service.createAgent({
+      name: "Guarded coder",
+      instructions: "Preserve authentication behaviour.",
+    });
+    const { run } = await service.sendMessage(agent.id, "Fix the timeout.");
+    await expect.poll(() => service.getRun(run.id).status).toBe("completed");
+
+    expect(runner.lastRequest?.taskContext).toEqual({
+      userPrompt: "Fix the timeout.",
+      agentInstructions: "Preserve authentication behaviour.",
+    });
   });
 
   it("atomically accepts only one concurrent run per Agent", async () => {

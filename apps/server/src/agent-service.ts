@@ -254,6 +254,10 @@ export class AgentService {
         agentId: agentAtStart.id,
         workspacePath: agentAtStart.workspacePath,
         prompt: run.prompt,
+        taskContext: {
+          userPrompt: run.prompt,
+          agentInstructions: agentAtStart.instructions,
+        },
         threadId: agentAtStart.codexThreadId,
         runId: run.id,
         reflections: agentAtStart.reflections ?? [],
