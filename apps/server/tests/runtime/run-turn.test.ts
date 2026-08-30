@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { sensitiveEgressCheck } from "../../src/check-sensitive-egress.js";
 import type { JsonRpcConnection } from "../../src/codex-app-server-client.js";
-import { runTurn } from "../../src/run-turn.js";
+import type { Check, Finding } from "../../src/checks.js";
+import { MAX_STEERS_PER_TURN, runTurn } from "../../src/run-turn.js";
 import type { TraceRecord } from "../../src/trace.js";
 
 type Handler = (params: Record<string, unknown>) => void;
@@ -357,5 +358,118 @@ describe("runTurn enforcement", () => {
     expect((turnStart?.params as { approvalPolicy?: string }).approvalPolicy).toBe("on-request");
     expect((turnStart?.params as { sandboxPolicy: { type: string; networkAccess: boolean } })
       .sandboxPolicy).toEqual(expect.objectContaining({ type: "readOnly", networkAccess: false }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Steering on a warn
+// ---------------------------------------------------------------------------
+//
+// Everything below `violation` used to be recorded and dropped, which made the
+// whole reflection layer inert: learned-watch is warn-only by design, so the
+// steer it writes was never delivered. Four captured runs contained zero
+// turn/steer messages. These pin the fix.
+
+/** A check that emits one finding, so a test can choose its severity and steer. */
+function fixedCheck(finding: Finding): Check {
+  return { name: finding.check, run: () => [finding] };
+}
+
+function warn(seq: number, steer?: string): Finding {
+  return {
+    check: "learned-watch",
+    code: "watched-source-read",
+    severity: "warn",
+    seq: seq,
+    evidence: [seq],
+    message: `read at ${seq}`,
+    ...(steer === undefined ? {} : { steer }),
+  };
+}
+
+async function runWith(rpc: FakeRpc, checks: Check[]): Promise<void> {
+  const turn = runTurn({
+    rpc: rpc.asConnection(),
+    prompt: "do the task",
+    threadId: null,
+    sandboxMode: "workspace-write",
+    checks: checks,
+    trace: [],
+    denyNetwork: true,
+  });
+  await settle();
+  rpc.fire("item/started", {});
+  await settle();
+  rpc.fire("turn/completed", { turn: { status: "completed" } });
+  await turn;
+}
+
+function steersFrom(rpc: FakeRpc): string[] {
+  return rpc.sent
+    .filter((message) => message.method === "turn/steer")
+    .map((message) => {
+      const params = message.params as { input?: Array<{ text?: string }> };
+      return params.input?.[0]?.text ?? "";
+    });
+}
+
+describe("runTurn steering on a warn", () => {
+  it("delivers the steer a warn carries", async () => {
+    const rpc = new FakeRpc();
+    await runWith(rpc, [fixedCheck(warn(1, "careful with that file"))]);
+
+    expect(steersFrom(rpc)).toEqual(["careful with that file"]);
+  });
+
+  it("stays silent for a warn with no steer", async () => {
+    // agent-intent sets none on purpose: its patterns are brittle enough that
+    // it is a smoke alarm, not an instruction.
+    const rpc = new FakeRpc();
+    await runWith(rpc, [fixedCheck(warn(1))]);
+
+    expect(rpc.sentMethods()).not.toContain("turn/steer");
+  });
+
+  it("a warn corrects without intervening or ending the turn", async () => {
+    const rpc = new FakeRpc();
+    const outcome = runTurn({
+      rpc: rpc.asConnection(),
+      prompt: "do the task",
+      threadId: null,
+      sandboxMode: "workspace-write",
+      checks: [fixedCheck(warn(1, "careful"))],
+      trace: [],
+      denyNetwork: true,
+    });
+    await settle();
+    rpc.fire("item/started", {});
+    await settle();
+    rpc.fire("turn/completed", { turn: { status: "completed" } });
+
+    const result = await outcome;
+    expect(result.intervened).toBe(false);
+    expect(rpc.sentMethods()).not.toContain("turn/interrupt");
+  });
+
+  it("caps steers per turn but still records every finding", async () => {
+    const rpc = new FakeRpc();
+    const checks = [1, 2, 3, 4, 5].map((seq) => fixedCheck(warn(seq, `steer ${seq}`)));
+    const outcome = runTurn({
+      rpc: rpc.asConnection(),
+      prompt: "do the task",
+      threadId: null,
+      sandboxMode: "workspace-write",
+      checks: checks,
+      trace: [],
+      denyNetwork: true,
+    });
+    await settle();
+    rpc.fire("item/started", {});
+    await settle();
+    rpc.fire("turn/completed", { turn: { status: "completed" } });
+
+    const result = await outcome;
+    expect(steersFrom(rpc)).toHaveLength(MAX_STEERS_PER_TURN);
+    expect(result.findings).toHaveLength(5);
   });
 });
