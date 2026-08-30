@@ -105,7 +105,13 @@ export function Trajectory({
         (view === "steps" ? (
           <>
             <FindingList findings={findings} />
-            <StepList steps={steps} live={live} records={records.length} status={status} />
+            <StepList
+              steps={steps}
+              live={live}
+              records={records.length}
+              status={status}
+              findings={findings}
+            />
           </>
         ) : (
           <RawList
@@ -162,11 +168,46 @@ function FindingList({ findings }: { findings: NonNullable<AgentRun["findings"]>
   );
 }
 
+/** Reads for a person: which guard spoke, or that one did without saying which. */
+function steerTitle(source: string | null): string {
+  return source === null ? "Steered by a guard" : `Steered by ${source}`;
+}
+
+/**
+ * Which guard sent a correction.
+ *
+ * `turn/steer` carries only the text — Codex's schema has no field for who
+ * asked for it — so the source is recovered by matching that text against the
+ * findings, which each hold the steer they wrote. It matters on screen because
+ * "the memory of an earlier run corrected it" and "the egress guard corrected
+ * it" are very different claims, and the timeline otherwise reads the same for
+ * both.
+ *
+ * Falls back to null rather than guessing: an unattributed correction still
+ * renders, just without a name.
+ */
+function steerSourceOf(
+  detail: string | null,
+  findings: NonNullable<AgentRun["findings"]>,
+): string | null {
+  if (detail === null || detail.trim() === "") return null;
+  const exact = findings.find((finding) => finding.steer === detail);
+  if (exact !== undefined) return exact.check;
+  // Redaction rewrites text on its way out, so a steer that carried something
+  // credential-shaped can arrive slightly changed. A prefix still identifies it.
+  const head = detail.slice(0, 60);
+  const near = findings.find(
+    (finding) => finding.steer !== undefined && finding.steer.slice(0, 60) === head,
+  );
+  return near?.check ?? null;
+}
+
 function StepList(props: {
   steps: TraceStep[];
   live: boolean;
   records: number;
   status: string;
+  findings: NonNullable<AgentRun["findings"]>;
 }) {
   if (props.steps.length === 0) {
     return <p className="trajectory-empty">{emptyMessage(props.live, props.records, props.status)}</p>;
@@ -183,7 +224,11 @@ function StepList(props: {
           <div className="step-body">
             <div className="step-title-row">
               <span className="step-label">{LABELS[step.kind]}</span>
-              <span className="step-title">{step.title}</span>
+              <span className="step-title">
+                {step.kind === "steer"
+                  ? steerTitle(steerSourceOf(step.detail, props.findings))
+                  : step.title}
+              </span>
               {step.outcome !== null && (
                 <span className={"step-outcome outcome-" + step.outcome}>{step.outcome}</span>
               )}
