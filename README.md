@@ -131,14 +131,16 @@ filenames entirely and flags an outbound command carrying a base64/hex run of
 `GUARDRAIL_BLOB_MIN_CHARS`+ characters (default 128). That is a `violation` when
 a sensitive file was read earlier in the run, and a `warn` otherwise.
 
-A third check on the same flag — **egress-intent**
-([`check-egress-intent.ts`](apps/server/src/check-egress-intent.ts)) — is the one
-place the egress family reads the Agent's reasoning. It refuses a command *only*
-when the narration stated an intent to move a secret off the machine **and** a
-later command in the same run is a real egress. Narration alone still does
-nothing (that stays the agent-intent guard's warn-only job); the corroborating
-command is what earns the block. It emits no `facts`, so nothing derived from
-self-reported narration reaches the reflection layer.
+> [!NOTE]
+> A third check, **egress-intent**, used to ride this flag: it refused a command
+> when the Agent's narration had stated an exfiltration intent and a later
+> command was outbound. It was removed on 2026-08-30. Both halves were weak in
+> the same direction — the narration side was the pattern matcher, and "a later
+> outbound command" included `npm install` — so a live run was ended by the
+> sentence *"I won't send the .env file due to security constraints"*, in which
+> the Agent was declining to do the thing. It was also the only path by which
+> pattern matching over prose could end a turn. Reasoning is now watched by the
+> semantic guard, which can only steer.
 
 Implementation:
 [`check-sensitive-egress.ts`](apps/server/src/check-sensitive-egress.ts).
@@ -419,7 +421,7 @@ scripts/reset-agent-thread.sh --forget    # also drop what it learned
 | `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox for unguarded turns. |
 | `CODEX_TIMEOUT_MS` | `600000` | Max duration of one turn. |
 | `CODEX_MAX_OUTPUT_BYTES` | `2097152` | Crash guard on runtime stdout. |
-| `GUARDRAIL_EGRESS_ENABLED` | `false` | Run the sensitive-egress + outbound-blob + egress-intent checks against every container turn, deny network, and pin the sandbox so an outbound command becomes a refusable approval. |
+| `GUARDRAIL_EGRESS_ENABLED` | `false` | Run the sensitive-egress + outbound-blob checks against every container turn, deny network, and pin the sandbox. |
 | `GUARDRAIL_INTENT_ENABLED` | `false` | Run the agent-intent check every turn. Warn-only; needs no sandbox change; independent of the egress flag. |
 | `GUARDRAIL_REFLECTION_ENABLED` | `false` | Carry what a guard caught into this Agent's later runs, as check parameters. Warn-only at any sighting count; independent of the other flags. |
 | `GUARDRAIL_SENSITIVE_MARKERS` | built-in list | Comma-separated path substrings that mark a file as secret. **Overrides** the default list when set. |
@@ -451,7 +453,7 @@ docker compose config
 
 | Area | Covers |
 | --- | --- |
-| `checks/` | Egress classification, credential-shape matching, outbound-blob, agent-intent patterns, the egress-intent correlation (narration + a later egress command), and a dedicated **bypass suite** (`check-sensitive-egress.bypass.test.ts`) that pins each known gap. |
+| `checks/` | Egress classification, credential-shape matching, outbound-blob, agent-intent patterns, and a dedicated **bypass suite** (`check-sensitive-egress.bypass.test.ts`) that pins each known gap. |
 | `reflections/` | Fact validation, dedup, per-`code` eviction, the fold into guard params, source attribution, withdrawal, the "user asked" gate, and the end-to-end learn → warn loop. |
 | `runtime/` | `run-turn` enforcement (decline / interrupt / steer), the container runner arg-building and lifecycle, ark-proxy schema conforming, codex-runner. |
 | `server/` | API routes and auth, `JsonStore`, trace writer, `AgentService` lifecycle. |
@@ -653,7 +655,6 @@ apps/
     src/checks.ts          Check contract + trace convenience views  ← read first
     src/check-sensitive-egress.ts   Egress guard + capability classifier
     src/check-outbound-blob.ts      Encoded-blob egress guard
-    src/check-egress-intent.ts      Narrated-intent + egress correlation guard
     src/check-agent-intent.ts       Reasoning-narration guard (warn-only)
     src/check-learned-watch.ts      Reflection-layer enforcement (warn-only)
     src/reflections.ts     Structured memory: validate, dedup, evict, fold
