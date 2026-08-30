@@ -39,6 +39,14 @@ export function resolveTurnSecurityPolicy(config: AppConfig): TurnSecurityPolicy
     return {
       // Preserve the established egress policy. Explicitly retaining
       // on-request avoids relying on a Codex config-file default.
+      //
+      // Measured, 2026-08-30: no approval mode gates an outbound command on
+      // app-server 0.111.0. Across four runs — no policy, "on-request", and
+      // "untrusted" — zero item/commandExecution/requestApproval were emitted
+      // for a curl, so the decline path is unreachable for network egress and
+      // turn/interrupt is the only enforcement available. "untrusted" is worse
+      // than useless here: it added no gating and the agent abandoned the task
+      // after two commands. Do not reach for it again without re-probing.
       sandboxMode: config.guardrailSandbox,
       denyNetwork: true,
       approvalPolicy: "on-request",

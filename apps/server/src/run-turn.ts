@@ -27,6 +27,15 @@ import type { SemanticProposedAction } from "./semantic-intent-monitor.js";
 import type { TraceRecord } from "./trace.js";
 import type { RunUsage } from "./types.js";
 
+/**
+ * Most corrections one turn may receive from the deterministic checks.
+ *
+ * Small on purpose. A steer is not a log line — it is text pushed into the
+ * conversation the Agent is mid-way through, so several in a row stop reading
+ * as a correction and start reading as a new task.
+ */
+export const MAX_STEERS_PER_TURN = 3;
+
 export interface TurnOptions {
   rpc: JsonRpcConnection;
   prompt: string;
@@ -114,12 +123,25 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
       ? `${finding.check}:${finding.code}`
       : `${finding.check}:${finding.code}:${finding.seq}`;
 
+  // Every steer is text injected into the turn the agent is still working in,
+  // so it costs tokens and competes with the task for attention. Violations are
+  // deduped once per turn, but warns are keyed per record — an Agent that reads
+  // four watched files produces four of them. Cap the deterministic checks so a
+  // memory with several matches corrects the Agent rather than talking over it.
+  // Findings past the cap are still recorded; only delivery stops.
+  let steersSent = 0;
+
+  function sendSteerWithinBudget(text: string): void {
+    if (steersSent >= MAX_STEERS_PER_TURN) return;
+    steersSent += 1;
+    sendSteer(text);
+  }
+
   /**
    * Run the checks over `trace` and act on anything new.
    *
-   * @param enforce when true, a violation triggers the configured response
-   *   (interrupt or steer). The approval handler passes false because it
-   *   answers with `decline` itself, which needs no interrupt.
+   * @param enforce when true, a finding triggers the configured response. The
+   *   approval handler passes false because it answers on the wire itself.
    */
   function review(trace: TraceRecord[], enforce: boolean): Finding[] {
     if (checks.length === 0) return [];
@@ -129,13 +151,27 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
       if (actedOn.has(key)) continue;
       actedOn.add(key);
       findings.push(finding);
-      if (finding.severity !== "violation") continue;
+
+      // A warn cannot refuse an action or end the turn, but it can still
+      // correct the agent — and steering is the only way anything below a
+      // violation reaches the agent at all. The reflection layer is entirely
+      // warn-only by design, so without this its steer text is written, stored
+      // and never delivered: the guard notices the repeat and says nothing.
+      //
+      // Honouring `steer` on its own merit is also what checks.ts already
+      // documents ("leave it unset to record the finding without intervening"),
+      // rather than gating on severity as this did before.
+      if (finding.severity !== "violation") {
+        if (enforce && finding.steer !== undefined) sendSteerWithinBudget(finding.steer);
+        continue;
+      }
+
       intervened = true;
       if (!enforce) continue;
       if (onViolation === "interrupt") {
         sendInterrupt();
       } else if (finding.steer !== undefined) {
-        sendSteer(finding.steer);
+        sendSteerWithinBudget(finding.steer);
       }
     }
     return found;
