@@ -3,6 +3,7 @@ import type { Finding } from "../../src/checks.js";
 import {
   MAX_STEERING_TASK_CHARS,
   remediationForFinding,
+  reportingCategoryForFinding,
   steeringPrompt,
 } from "../../src/steering-policy.js";
 
@@ -43,6 +44,17 @@ describe("shared steering policy", () => {
     );
     expect(prompt).not.toContain("SECRET_VALUE");
     expect(prompt).not.toContain("regex");
+  });
+
+  it("does not turn aligned or uncertain semantic assessments into categories", () => {
+    expect(reportingCategoryForFinding({
+      ...finding("semantic-intent", "semantic-action"),
+      metadata: { assessment: { classification: "aligned" } },
+    })).toBeNull();
+    expect(reportingCategoryForFinding({
+      ...finding("semantic-intent", "semantic-action"),
+      metadata: { assessment: { classification: "security_weakening" } },
+    })).toBe("security_weakening");
   });
 
   it("retains a later trusted constraint while bounding the task reminder", () => {

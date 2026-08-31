@@ -47,6 +47,24 @@ describe("HTTP boundary", () => {
     await app.close();
   });
 
+  it("serves the read-only Admin overview through the normal API boundary", async () => {
+    const adminService = {
+      adminOverview: () => ({
+        totals: { runs: 2, intervenedRuns: 1, blockedActions: 1, redirects: 0, approvalRequests: 0, approvals: 0, denials: 0, timeouts: 0, recurringPatterns: 0, needsAttention: 0 },
+        categories: [{ category: "data_exfiltration", count: 1 }],
+        interventions: [],
+        learnedPatterns: [],
+      }),
+    } as unknown as AgentService;
+    const app = await createApp(loadConfig({ NODE_ENV: "test" }), adminService);
+
+    const response = await app.inject({ method: "GET", url: "/api/admin/overview" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().totals).toMatchObject({ runs: 2, blockedActions: 1 });
+    await app.close();
+  });
+
   it("resolves a one-shot run approval through the narrow API", async () => {
     const runId = "11111111-1111-4111-8111-111111111111";
     const approvalId = "22222222-2222-4222-8222-222222222222";

@@ -137,6 +137,27 @@ button {
   margin-top: 3px;
 }
 
+.surface-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin: -8px 0 16px;
+}
+
+.surface-nav button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px;
+  background: transparent;
+  color: #aaa9a2;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.surface-nav button.selected,
+.surface-nav button:hover { background: #353430; color: #f5f3ed; }
+
 .button {
   border: 0;
   border-radius: 10px;
@@ -1746,6 +1767,30 @@ textarea:focus {
   color: var(--ink);
 }
 
+.admin-page { max-width: 980px; margin: 30px auto; }
+.admin-header h1, .admin-section h2 { margin: 7px 0; }
+.admin-header p, .muted-copy { color: var(--muted); font-size: 13px; }
+.admin-tabs { display: flex; gap: 18px; margin: 28px 0 20px; border-bottom: 1px solid var(--line); }
+.admin-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 0 0 10px; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; font-weight: 700; }
+.admin-tabs button.selected { color: var(--purple-dark); border-color: var(--purple); }
+.admin-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 28px; }
+.admin-metrics div, .admin-section, .intervention, .pattern { border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.admin-metrics div { padding: 15px; }
+.admin-metrics dt { color: var(--muted); font-size: 11px; font-weight: 700; }
+.admin-metrics dd { margin: 7px 0 0; font-size: 24px; font-weight: 750; }
+.admin-section { padding: 20px; }
+.category-list, .intervention-list, .pattern-list { margin: 16px 0 0; padding: 0; list-style: none; }
+.category-list li { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.category-list li:last-child { border-bottom: 0; }
+.intervention-list, .pattern-list { display: grid; gap: 10px; }
+.intervention, .pattern { padding: 14px; }
+.intervention > div, .pattern > div { display: flex; justify-content: space-between; gap: 12px; }
+.intervention span, .pattern span { color: var(--muted); font-size: 11px; }
+.intervention p, .pattern p { margin: 8px 0; font-size: 13px; }
+.intervention footer, .pattern footer { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.intervention footer button { margin-left: auto; border: 0; background: transparent; color: var(--purple-dark); cursor: pointer; font-size: 12px; font-weight: 700; }
+.event-tag { padding: 3px 6px; border-radius: 5px; background: var(--purple-soft); color: var(--purple-dark) !important; font-size: 10px !important; font-weight: 700; }
+
 .approval-heading {
   display: flex;
   align-items: center;
@@ -1835,6 +1880,15 @@ textarea:focus {
   cursor: pointer;
   font-size: 10px;
 }
+
+.file-change-list { display: grid; gap: 4px; margin-top: 7px; }
+.file-change { padding: 6px 8px; border: 1px solid #eceae4; border-radius: 8px; background: #fcfcfa; }
+.file-change summary { display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 11px; }
+.file-change summary code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.file-change-kind { color: var(--muted); text-transform: capitalize; }
+.file-change-counts { margin-left: auto; color: var(--green); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.file-change-diff { max-height: 260px; margin: 8px 0 0; padding: 9px; overflow: auto; border-radius: 6px; background: var(--paper); white-space: pre; font-size: 11px; line-height: 1.45; }
+.file-change-truncated { display: block; margin-top: 7px; color: var(--muted); font-size: 10px; }
 
 .technical-details { background: #fff; }
 

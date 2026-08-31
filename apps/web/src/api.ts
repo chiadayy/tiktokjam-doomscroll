@@ -1,4 +1,4 @@
-import type { Agent, AgentRun, Message, SystemInfo } from "./types";
+import type { AdminOverview, Agent, AgentRun, Message, SystemInfo } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -35,6 +35,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 export const api = {
   auth: () => request<{ required: boolean }>("/api/auth"),
   system: () => request<SystemInfo>("/api/system"),
+  adminOverview: () => request<AdminOverview>("/api/admin/overview"),
   listAgents: () => request<{ agents: Agent[] }>("/api/agents"),
   createAgent: (body: {
     name: string;

@@ -13,6 +13,7 @@ import type {
 } from "./types.js";
 import { WorkspaceManager } from "./workspace.js";
 import { redactSensitiveText } from "./redaction/index.js";
+import { buildAdminOverview, type AdminOverview } from "./admin-report.js";
 import type {
   HumanApprovalDecision,
   HumanApprovalDraft,
@@ -168,6 +169,11 @@ export class AgentService {
       .snapshot()
       .runs.filter((run) => run.agentId === agentId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  adminOverview(): AdminOverview {
+    const database = this.store.snapshot();
+    return buildAdminOverview(database.agents, database.runs);
   }
 
   async resolveApproval(

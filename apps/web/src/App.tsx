@@ -1,9 +1,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, setAuthToken } from "./api";
 import { MessageContent } from "./MessageContent";
-import type { Agent, AgentRun, Message, SystemInfo } from "./types";
+import type { AdminOverview, Agent, AgentRun, Message, SystemInfo } from "./types";
 import { ReflectionList } from "./Reflections";
 import { Trajectory } from "./Trajectory";
+import { Admin } from "./Admin";
 import { parseTrace, toSteps, type TraceRecord, type TraceStep } from "./trace";
 
 const starterPrompts = [
@@ -63,6 +64,8 @@ export default function App() {
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
   const [authInput, setAuthInput] = useState("");
   const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null);
+  const [surface, setSurface] = useState<"playground" | "admin">("playground");
+  const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
   const messageEnd = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
@@ -119,6 +122,14 @@ export default function App() {
   const bootstrap = useCallback(async () => {
     await Promise.all([refreshAgents(), api.system().then(setSystem)]);
   }, [refreshAgents]);
+
+  const openAdmin = () => {
+    setSurface("admin");
+    setError(null);
+    void api.adminOverview()
+      .then(setAdminOverview)
+      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+  };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -396,6 +407,18 @@ export default function App() {
           </div>
         </div>
 
+        <nav className="surface-nav" aria-label="Main navigation">
+          <button
+            className={surface === "playground" ? "selected" : ""}
+            onClick={() => setSurface("playground")}
+          >
+            Playground
+          </button>
+          <button className={surface === "admin" ? "selected" : ""} onClick={openAdmin}>
+            Admin
+          </button>
+        </nav>
+
         <button
           className="button button-primary create-button"
           onClick={() => {
@@ -444,6 +467,16 @@ export default function App() {
       </aside>
 
       <main className="main">
+        {surface === "admin" ? (
+          <Admin
+            overview={adminOverview}
+            onViewRun={(agentId, runId) => {
+              setSelectedId(agentId);
+              void api.run(runId).then(({ run }) => setActiveRun(run));
+              setSurface("playground");
+            }}
+          />
+        ) : <>
         {!system?.arkConfigured || !system?.codexAvailable ? (
           <div className="config-banner">
             <span>!</span>
@@ -677,6 +710,7 @@ export default function App() {
             </button>
           </div>
         )}
+        </>}
       </main>
 
       {showCreate && (

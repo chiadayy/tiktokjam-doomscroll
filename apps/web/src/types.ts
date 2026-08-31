@@ -110,3 +110,56 @@ export interface SystemInfo {
   containerEngine: string | null;
   runtime: string;
 }
+
+export type AdminCategory =
+  | "data_exfiltration"
+  | "security_weakening"
+  | "scope_expansion"
+  | "destructive_divergence"
+  | "persistence"
+  | "oversight_evasion"
+  | "deception"
+  | "untrusted_instruction_adoption";
+
+export interface AdminOverview {
+  totals: {
+    runs: number;
+    intervenedRuns: number;
+    blockedActions: number;
+    redirects: number;
+    approvalRequests: number;
+    approvals: number;
+    denials: number;
+    timeouts: number;
+    recurringPatterns: number;
+    needsAttention: number;
+  };
+  categories: Array<{ category: AdminCategory; count: number }>;
+  interventions: Array<{
+    id: string;
+    at: string;
+    runId: string;
+    agentId: string;
+    agentName: string;
+    category: AdminCategory | null;
+    layer: "deterministic" | "semantic" | "memory" | "runtime" | "human";
+    outcome: "blocked" | "redirected" | "warning" | "runtime_failure" | "approved" | "denied" | "timed_out";
+    summary: string;
+  }>;
+  learnedPatterns: Array<{
+    agentId: string;
+    agentName: string;
+    subjectType: "destination" | "file" | "pattern";
+    value: string;
+    precondition: string;
+    channel: string | null;
+    firstSeenAt: string;
+    lastSeenAt: string;
+    sightings: number;
+    conversations: number | null;
+    recurring: boolean;
+    needsAttention: boolean;
+    derivedFamily: boolean;
+    effect: string;
+  }>;
+}
