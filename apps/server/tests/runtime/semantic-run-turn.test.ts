@@ -209,7 +209,7 @@ describe("trajectory-aware semantic enforcement", () => {
       prompt: task.userPrompt,
       threadId: null,
       sandboxMode: "read-only",
-      approvalPolicy: "on-request",
+      approvalPolicy: "untrusted",
       semanticEnforcement: true,
       checks,
       trace: records,
@@ -516,7 +516,7 @@ describe("trajectory-aware semantic enforcement", () => {
     expect(rpc.replies).toContainEqual({ id: 30, result: { decision: "accept" } });
   });
 
-  it("lets learned-watch steer without forcing semantic action review", async () => {
+  it("defers a learned-read steer until the command completes under effect gating", async () => {
     const rpc = new FakeRpc();
     const path = "/workspace/untrusted-guide.md";
     const records: TraceRecord[] = [
@@ -534,21 +534,21 @@ describe("trajectory-aware semantic enforcement", () => {
         watchedFiles: [{ value: path, precondition: "untrusted-source-read" }],
       },
     });
-    const turn = start(rpc, records, monitor, [check]);
+    const turn = start(rpc, records, monitor, [check], true);
     await settle();
 
     rpc.fire("item/started", {});
-    await rpc.approve(
-      "item/commandExecution/requestApproval",
-      { itemId: "c1", command: `cat ${path}` },
-      34,
-    );
+    expect(rpc.sent.map((entry) => entry.method)).not.toContain("turn/steer");
+
+    records.push(completedRead("c1", path));
+    rpc.fire("item/completed", { item: { id: "c1", type: "commandExecution" } });
+
+    expect(rpc.sent.map((entry) => entry.method)).toContain("turn/steer");
     rpc.fire("turn/completed", {});
     await turn;
 
-    expect(rpc.sent.map((entry) => entry.method)).toContain("turn/steer");
     expect(monitor.inputs).toHaveLength(0);
-    expect(rpc.replies).toContainEqual({ id: 34, result: { decision: "accept" } });
+    expect(rpc.replies).toEqual([]);
   });
 
   it("declines and steers when semantic review confirms an ambiguous signal", async () => {

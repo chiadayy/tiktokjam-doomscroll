@@ -9,6 +9,8 @@
 
 /** `AskForApproval` from the pinned v2 app-server bindings. */
 export type AskForApproval =
+  // Pinned app-server definition: only known-safe commands that exclusively
+  // read files are auto-approved; everything else requests approval.
   | "untrusted"
   | "on-failure"
   | "on-request"

@@ -28,7 +28,7 @@ describe("turn security policy", () => {
     expect(policy).toEqual({
       sandboxMode: "read-only",
       denyNetwork: true,
-      approvalPolicy: "on-request",
+      approvalPolicy: "untrusted",
       semanticEnforcement: false,
       effectGating: true,
     });
@@ -47,7 +47,7 @@ describe("turn security policy", () => {
     expect(policy).toEqual({
       sandboxMode: "read-only",
       denyNetwork: true,
-      approvalPolicy: "on-request",
+      approvalPolicy: "untrusted",
       semanticEnforcement: true,
       effectGating: true,
     });
@@ -66,7 +66,7 @@ describe("turn security policy", () => {
     expect(policy).toEqual({
       sandboxMode: "read-only",
       denyNetwork: true,
-      approvalPolicy: "on-request",
+      approvalPolicy: "untrusted",
       semanticEnforcement: false,
       effectGating: true,
     });

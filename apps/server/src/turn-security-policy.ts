@@ -6,12 +6,12 @@ import type { TurnOptions } from "./run-turn.js";
  * The security-relevant portion of a live Codex turn, resolved once rather
  * than spread across the runner and JSON-RPC call sites.
  *
- * Codex app-server 0.111.0 was probed with `approvalPolicy: "on-request"`
- * and the v2 `readOnly` policy. A read (`cat`) ran normally; an editor write
- * produced `item/fileChange/requestApproval` while its target did not exist;
- * and a shell redirect produced `item/commandExecution/requestApproval`
-   * before its target existed. This gives guarded effects a real barrier,
- * rather than treating an asynchronous item notification as one.
+ * Codex app-server 0.111.0 defines `approvalPolicy: "untrusted"` as allowing
+ * only known-safe, read-only commands without approval. Every other command
+ * requests approval before execution. This is deliberately stronger than
+ * `on-request`: a network-denied command may still be attempted inside the
+ * sandbox under `on-request` and fail without ever emitting an approval.
+ * Guarded effects therefore use `untrusted` as their real pre-execution hook.
  */
 export interface TurnSecurityPolicy {
   sandboxMode: TurnOptions["sandboxMode"];
@@ -29,10 +29,10 @@ export function resolveTurnSecurityPolicy(config: AppConfig): TurnSecurityPolicy
       // `workspaceWrite` permits mutations with no approval notification.
       // `readOnly` keeps inspection cheap but makes writes request approval.
       sandboxMode: "read-only",
-      // This also gives guarded turns a pre-execution boundary for
-      // network/external effects such as git push or publish.
+      // Defence in depth after the untrusted approval boundary: even an
+      // unexpected ungated network attempt remains inside a networkless sandbox.
       denyNetwork: true,
-      approvalPolicy: "on-request",
+      approvalPolicy: "untrusted",
       semanticEnforcement: config.semanticGuardEnabled,
       effectGating: true,
     };

@@ -496,10 +496,14 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   rpc.onRequest("item/fileChange/requestApproval", fileChangeApproval);
 
   // Under effect gating, item/started announces a proposal; the approval
-  // request is the enforcement point. Without that boundary, retain the
-  // legacy immediate response for a definitely unsafe running action.
+  // request is the enforcement point. Do not deliver warning steers while a
+  // command is still running: pinned app-server 0.111.0 can accept that steer,
+  // append its user message, and then fail to resume the turn. Safe reads have
+  // no approval request, so their warnings are reviewed at item/completed —
+  // still before the Agent can choose its next action. Without effect gating,
+  // retain the legacy immediate response for a definitely unsafe action.
   rpc.on("item/started", function reviewOnStart() {
-    review(records, !effectGating);
+    if (!effectGating) review(records, true);
   });
 
   rpc.on("item/completed", function collectAgentMessage(params) {
@@ -857,9 +861,9 @@ async function openThread(rpc: JsonRpcConnection, options: TurnOptions): Promise
 }
 
 /**
- * @param denyNetwork when true, drop network access from the policy so any
- * command that needs the network escalates to a permission request the caller
- * can inspect. `danger-full-access` cannot express this and is left as is.
+ * @param denyNetwork when true, drop network access from the sandbox as defence
+ * in depth. Approval behavior is controlled separately by approvalPolicy;
+ * network denial by itself does not guarantee a pre-execution request.
  */
 function buildSandboxPolicy(
   mode: TurnOptions["sandboxMode"],

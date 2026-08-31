@@ -99,7 +99,7 @@ build.
 ## Common options
 
 ```bash
-CONTAINER_RUNTIME_APT_PACKAGES='ca-certificates git ripgrep python3 build-essential' \
+CONTAINER_RUNTIME_APT_PACKAGES='ca-certificates curl git ripgrep python3 build-essential' \
 ARK_API_KEY=your-ark-api-key \
 ARK_MODEL=ep-your-endpoint-id \
 npm run poc

@@ -119,10 +119,10 @@ Findings are acted on in [`run-turn.ts`](apps/server/src/run-turn.ts):
 | `info` | recorded only |
 
 When the **egress or semantic guard is on**, the guarded turn runs `read-only`
-with `approvalPolicy: on-request` and no network
+with `approvalPolicy: untrusted` and no network
 ([`turn-security-policy.ts`](apps/server/src/turn-security-policy.ts)). Ordinary
-reads (`ls`, `cat`, `rg`) run untouched; a workspace write or an outbound
-command instead pauses at a real pre-execution approval request, which is where
+known-safe reads (`ls`, `cat`, `rg`) run untouched; every other command and any
+workspace write pause at a real pre-execution approval request, which is where
 the guard answers `decline`. `turn/interrupt` is the backstop, and an audit
 check records and interrupts if an effect completes without passing that gate.
 
@@ -147,8 +147,8 @@ isolation. **There is deliberately no master switch.**
 **Invariant: workspace secrets never leave the machine.**
 
 A guarded turn runs `read-only` with network access **denied** and
-`approvalPolicy: on-request`, so any outbound command — and any workspace write
-— escalates to an approval request. At that approval step the guard refuses a
+`approvalPolicy: untrusted`, so every command except a known-safe read — and any
+workspace write — pauses at an approval request. At that step the guard refuses a
 command that carries a workspace secret — one that:
 
 - names a sensitive path in its own arguments (`curl --data @.env …`), or
@@ -257,7 +257,7 @@ model — turns that assessment into an action:
 The monitor never talks to the runtime. A required review that times out fails
 closed (the action is declined, the turn lives); a reasoning-only review that
 fails is recorded and allowed. Enabling this guard also puts the turn on the
-`read-only` / `on-request` policy described above.
+`read-only` / `untrusted` policy described above.
 
 Implementation:
 [`semantic-intent-monitor.ts`](apps/server/src/semantic-intent-monitor.ts),
@@ -627,16 +627,16 @@ want the result without paying for the first two runs.
 | `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox for unguarded turns. |
 | `CODEX_TIMEOUT_MS` | `600000` | Max duration of one turn. |
 | `CODEX_MAX_OUTPUT_BYTES` | `2097152` | Crash guard on runtime stdout. |
-| `GUARDRAIL_EGRESS_ENABLED` | `false` | Run the sensitive-egress + outbound-blob checks against every container turn. Also puts the turn on the `read-only` + `on-request` policy with network denied, so outbound commands and workspace writes pause at an approval the guard can refuse. |
+| `GUARDRAIL_EGRESS_ENABLED` | `false` | Run the sensitive-egress + outbound-blob checks against every container turn. Also puts the turn on the `read-only` + `untrusted` policy with network denied, so every command except a known-safe read and every workspace write pauses at an approval the guard can inspect. |
 | `GUARDRAIL_INTENT_ENABLED` | `false` | Run the agent-intent check every turn. Warn-only; needs no sandbox change; independent of the egress flag. |
 | `GUARDRAIL_REFLECTION_ENABLED` | `false` | Carry what a guard caught into this Agent's later runs, as check parameters — exact hosts, derived host families, watched files. Warn-only at any tier; independent of the other flags. |
 | `GUARDRAIL_SENSITIVE_MARKERS` | built-in list | Comma-separated path substrings that mark a file as secret. **Overrides** the default list when set. |
-| `GUARDRAIL_SANDBOX` | `workspace-write` | Legacy, retained for config compatibility. Egress- and semantic-guarded turns use the resolved `read-only` + `on-request` policy regardless of this value. |
+| `GUARDRAIL_SANDBOX` | `workspace-write` | Legacy, retained for config compatibility. Egress- and semantic-guarded turns use the resolved `read-only` + `untrusted` policy regardless of this value. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
-| `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review. In the container Runtime, this also uses a verified `read-only` + `on-request` policy so workspace writes and network effects pause at an approval boundary before execution. |
+| `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review. In the container Runtime, this also uses a verified `read-only` + `untrusted` policy so non-read commands and workspace writes pause at an approval boundary before execution. |
 | `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional model override for semantic review. |
 | `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required action reviews delegate to HITL when available and otherwise fail closed; reasoning-only reviews fail open with a warning. |
-| `HITL_ENABLED` | `false` | Enable one-shot human confirmation for high-consequence commands, semantic uncertainty, and unavailable required semantic reviews. Uses the same verified `read-only` + `on-request` Runtime boundary; routine approvals remain automatic. |
+| `HITL_ENABLED` | `false` | Enable one-shot human confirmation for high-consequence commands, semantic uncertainty, and unavailable required semantic reviews. Uses the same verified `read-only` + `untrusted` Runtime boundary; routine approvals remain automatic. |
 | `HITL_TIMEOUT_MS` | `120000` | Maximum time a Runtime approval may wait for a person. Timeout denies that action and lets the turn continue. |
 | `LOCAL_POC_DATA_ROOT` | platform-specific | Local metadata / workspace / session directory for `npm run poc`. |
 

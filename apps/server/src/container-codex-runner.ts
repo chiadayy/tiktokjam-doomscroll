@@ -301,8 +301,9 @@ export class ContainerCodexRunner implements AgentRunner {
         checks: checks,
         ...(intentController === undefined ? {} : { intentController }),
         trace: records,
-        // Deny network so an outbound command escalates to a permission request
-        // the checks can refuse before it runs.
+        // Keep the sandbox networkless as defence in depth. The pre-execution
+        // hook itself comes from approvalPolicy=untrusted; on-request alone can
+        // attempt a network command in the sandbox without asking first.
         denyNetwork: securityPolicy.denyNetwork,
         ...(securityPolicy.approvalPolicy === undefined
           ? {}

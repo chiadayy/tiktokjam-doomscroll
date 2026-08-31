@@ -86,9 +86,10 @@ are persisted on the Run and do not modify the append-only raw trace.
 
 When `GUARDRAIL_SEMANTIC_ENABLED=true`, the container runner resolves an
 explicit turn security policy before starting Codex: `read-only` sandbox,
-`on-request` approval policy, and denied network. This does not make every
-operation a semantic-model call. It makes state-changing workspace actions and
-network effects pause at Codex's real approval request, where `runTurn()` waits
+`untrusted` approval policy, and denied network. This does not make every
+operation a semantic-model call. It makes every command except a known-safe
+read, plus state-changing workspace actions, pause at Codex's real approval
+request, where `runTurn()` waits
 for prior reasoning assessment, applies deterministic checks, and only then
 performs a selected semantic action review. Read/list/search work remains
 ungated. A completed file change without its expected approval is recorded as

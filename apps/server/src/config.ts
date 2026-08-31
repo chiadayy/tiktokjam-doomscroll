@@ -65,9 +65,9 @@ const envSchema = z.object({
   /**
    * Run the sensitive-egress family of checks (sensitive-egress and
    * outbound-blob) against every turn, and pin a guarded turn to
-   * GUARDRAIL_SANDBOX with network denied so an outbound command escalates to
-   * an approval the guard can refuse. Guarded effects use the verified
-   * read-only/on-request Runtime policy. Off by default: with no checks the agent
+   * GUARDRAIL_SANDBOX with network denied. Guarded effects use the verified
+   * read-only/untrusted Runtime policy, which pauses every command except
+   * known-safe reads before execution. Off by default: with no checks the agent
    * runs exactly as it would unobserved.
    *
    * This is one guard in what will be a family. Each guard gets its own
@@ -124,7 +124,7 @@ const envSchema = z.object({
     .transform((value) => value === "true" || value === "1"),
   /**
    * Enable task-aware semantic monitoring and its container-runtime
-   * pre-execution policy: read-only sandbox, on-request approvals, and denied
+   * pre-execution policy: read-only sandbox, untrusted approvals, and denied
    * network. Container Runtime only.
    */
   GUARDRAIL_SEMANTIC_ENABLED: z

@@ -4,7 +4,7 @@ FROM ${NODE_IMAGE}
 ARG CODEX_VERSION=0.111.0
 ARG DEBIAN_MIRROR=""
 ARG DEBIAN_SECURITY_MIRROR=""
-ARG RUNTIME_APT_PACKAGES="ca-certificates git ripgrep"
+ARG RUNTIME_APT_PACKAGES="ca-certificates curl git ripgrep"
 
 LABEL org.opencontainers.image.title="Volc Agent Runtime"
 LABEL org.opencontainers.image.description="Disposable local Codex CLI runtime for the CodeJam Starter Kit"
