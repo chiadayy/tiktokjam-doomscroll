@@ -124,6 +124,12 @@ export function Workspace({
       setError("Give the file a path");
       return;
     }
+    // The field pre-fills with a directory prefix, so this is the easy mistake:
+    // saving `skills/` would name a file `skills` and block the directory.
+    if (path.endsWith("/")) {
+      setError("Add a file name after the folder, e.g. skills/deploy-helper.md");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {

@@ -79,6 +79,21 @@ describe("workspace path containment", () => {
     expect(() => resolveInside(root, "/etc/passwd")).toThrow(WorkspacePathError);
   });
 
+  // Regression: the UI pre-fills a directory prefix, and saving it unchanged
+  // wrote a *file* named `skills`, which then blocked the directory the caller
+  // wanted. Found by a real run, not by review.
+  it("refuses a path that ends in a slash", async () => {
+    const root = await workspace();
+    expect(() => resolveInside(root, "skills/")).toThrow(WorkspacePathError);
+  });
+
+  it("refuses to write over an existing directory", async () => {
+    const root = await workspace();
+    await expect(writeWorkspaceFile(root, "skills", "oops")).rejects.toThrow(
+      WorkspacePathError,
+    );
+  });
+
   it("refuses a path containing a null byte", async () => {
     const root = await workspace();
     expect(() => resolveInside(root, "a\0b")).toThrow(WorkspacePathError);

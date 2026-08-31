@@ -88,6 +88,16 @@ export function resolveInside(root: string, relative: string): string {
   if (path.isAbsolute(relative)) {
     throw new WorkspacePathError("Path must be relative to the workspace");
   }
+  // A trailing separator names a directory. Without this, `skills/` resolves to
+  // `<root>/skills` and a write creates a *file* called `skills`, which then
+  // blocks the directory the caller was actually reaching for. The UI pre-fills
+  // a directory prefix, so this is the likely typo, not an exotic one.
+  if (/[\\/]$/.test(relative)) {
+    throw new WorkspacePathError("Path ends in a slash — name a file, not a directory");
+  }
+  if (path.basename(relative).length === 0) {
+    throw new WorkspacePathError("Path has no file name");
+  }
 
   const rootResolved = path.resolve(root);
   const target = path.resolve(rootResolved, relative);
@@ -184,6 +194,13 @@ export async function writeWorkspaceFile(
     throw new WorkspacePathError(
       `File is ${bytes} bytes; the limit is ${MAX_WRITE_BYTES}`,
     );
+  }
+
+  // Resolution alone cannot catch this: `skills` is a perfectly good relative
+  // path, and only the filesystem knows it is already a directory.
+  const existing = await stat(absolute).catch(() => null);
+  if (existing !== null && existing.isDirectory()) {
+    throw new WorkspacePathError("That path is a directory");
   }
 
   await mkdir(path.dirname(absolute), { recursive: true });
