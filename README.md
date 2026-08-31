@@ -1,5 +1,11 @@
 # Agents on a Leash
 
+## Project Poster
+<img width="905" height="1280" alt="agents_on_a_leash" src="https://github.com/user-attachments/assets/656816ff-4032-4e2d-8edc-9b1ab65d77e1" />
+
+## Architecture Diagram
+<img width="1280" height="889" alt="architecture_diagram" src="https://github.com/user-attachments/assets/625e2753-09f4-4e59-b7c2-72d39c82e13e" />
+
 **TikTok Hackathon — Track 1, Kill Switch (safety & sandboxing).**
 
 An autonomous coding Agent can go off the rails **on its own**. No attacker is
