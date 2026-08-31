@@ -12,12 +12,28 @@ import type {
   UpdateAgentInput,
 } from "./types.js";
 import { WorkspaceManager } from "./workspace.js";
+import { redactSensitiveText } from "./redaction/index.js";
+import { buildAdminOverview, type AdminOverview } from "./admin-report.js";
+import type {
+  HumanApprovalDecision,
+  HumanApprovalDraft,
+  HumanApprovalRequest,
+  HumanApprovalResolution,
+} from "./types.js";
 
 const now = () => new Date().toISOString();
+
+interface PendingApprovalWaiter {
+  request: HumanApprovalRequest;
+  agentId: string;
+  resolve: (resolution: HumanApprovalResolution) => void;
+  timer: NodeJS.Timeout | null;
+}
 
 export class AgentService {
   private readonly activeExecutions = new Map<string, Promise<void>>();
   private readonly cancellationRequests = new Set<string>();
+  private readonly pendingApprovals = new Map<string, PendingApprovalWaiter>();
 
   constructor(
     private readonly config: AppConfig,
@@ -31,11 +47,16 @@ export class AgentService {
     await this.workspaces.initialize();
     await this.store.mutate((database) => {
       for (const run of database.runs) {
-        if (run.status === "queued" || run.status === "running") {
+        if (
+          run.status === "queued" ||
+          run.status === "running" ||
+          run.status === "waiting_approval"
+        ) {
           run.status = "cancelled";
           run.error = "Server restarted while this run was active";
           run.completedAt = now();
         }
+        run.pendingApproval = null;
       }
       for (const agent of database.agents) {
         if (agent.status === "busy") {
@@ -150,6 +171,29 @@ export class AgentService {
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
+  adminOverview(): AdminOverview {
+    const database = this.store.snapshot();
+    return buildAdminOverview(database.agents, database.runs);
+  }
+
+  async resolveApproval(
+    runId: string,
+    approvalId: string,
+    decision: HumanApprovalDecision,
+  ): Promise<AgentRun> {
+    const waiter = this.pendingApprovals.get(approvalId);
+    if (waiter === undefined || waiter.request.runId !== runId) {
+      throw new HttpError(409, "Approval is stale or has already been resolved");
+    }
+    await this.finishApproval(
+      waiter,
+      decision === "approve"
+        ? { decision: "approve", outcome: "approved" }
+        : { decision: "deny", outcome: "denied" },
+    );
+    return this.getRun(runId);
+  }
+
   async sendMessage(
     agentId: string,
     prompt: string,
@@ -173,6 +217,7 @@ export class AgentService {
       trace: null,
       findings: [],
       intervened: false,
+      pendingApproval: null,
       evaluation: null,
       startedAt: null,
       completedAt: null,
@@ -261,6 +306,12 @@ export class AgentService {
         threadId: agentAtStart.codexThreadId,
         runId: run.id,
         reflections: agentAtStart.reflections ?? [],
+        ...(this.config.hitlEnabled
+          ? {
+              requestHumanApproval: (approval: HumanApprovalDraft) =>
+                this.requestApproval(agentAtStart.id, run.id, approval),
+            }
+          : {}),
       });
       const completedAt = now();
       await this.store.mutate((database) => {
@@ -273,6 +324,7 @@ export class AgentService {
         storedRun.trace = result.trace ?? null;
         storedRun.findings = result.findings ?? [];
         storedRun.intervened = result.intervened ?? false;
+        storedRun.pendingApproval = null;
         storedRun.completedAt = completedAt;
         // Absent when the reflection guard is off, which must leave whatever is
         // already stored alone rather than clearing it.
@@ -303,6 +355,7 @@ export class AgentService {
           storedRun.status = cancelled ? "cancelled" : "failed";
           storedRun.error = message;
           storedRun.trace = traceOf(error);
+          storedRun.pendingApproval = null;
           storedRun.completedAt = completedAt;
         }
         if (agent) {
@@ -335,6 +388,7 @@ export class AgentService {
   private async cancelExecution(agentId: string): Promise<void> {
     this.cancellationRequests.add(agentId);
     try {
+      await this.cancelPendingApprovals(agentId);
       await this.runner.cancel(agentId);
       const execution = this.activeExecutions.get(agentId);
       if (execution) {
@@ -344,4 +398,101 @@ export class AgentService {
       this.cancellationRequests.delete(agentId);
     }
   }
+
+  private async requestApproval(
+    agentId: string,
+    runId: string,
+    draft: HumanApprovalDraft,
+  ): Promise<HumanApprovalResolution> {
+    const createdAt = now();
+    const request: HumanApprovalRequest = {
+      id: randomUUID(),
+      runId,
+      reason: draft.reason,
+      actionType: draft.actionType,
+      actionId: boundedSafeText(draft.actionId, 160),
+      summary: boundedSafeText(draft.summary, 240),
+      ...(draft.safeDetails === undefined
+        ? {}
+        : { safeDetails: boundedSafeText(draft.safeDetails, 2_000) }),
+      createdAt,
+      expiresAt: new Date(Date.now() + this.config.hitlTimeoutMs).toISOString(),
+    };
+
+    let resolveDecision!: (resolution: HumanApprovalResolution) => void;
+    const decision = new Promise<HumanApprovalResolution>((resolve) => {
+      resolveDecision = resolve;
+    });
+    const waiter: PendingApprovalWaiter = {
+      request,
+      agentId,
+      resolve: resolveDecision,
+      timer: null,
+    };
+    this.pendingApprovals.set(request.id, waiter);
+
+    try {
+      const opened = await this.store.mutate((database) => {
+        const run = database.runs.find((item) => item.id === runId && item.agentId === agentId);
+        if (run === undefined || run.status !== "running") return false;
+        run.status = "waiting_approval";
+        run.pendingApproval = request;
+        return true;
+      });
+      if (!opened) {
+        this.pendingApprovals.delete(request.id);
+        resolveDecision({ decision: "deny", outcome: "cancelled" });
+        return decision;
+      }
+
+      // Cancellation may have settled the waiter while the serialized store
+      // mutation was opening it. In that case its queued cleanup owns state.
+      if (!this.pendingApprovals.has(request.id)) return decision;
+      waiter.timer = setTimeout(() => {
+        void this.finishApproval(waiter, { decision: "deny", outcome: "timed_out" }).catch(
+          () => undefined,
+        );
+      }, this.config.hitlTimeoutMs);
+      waiter.timer.unref();
+      return decision;
+    } catch (error) {
+      this.pendingApprovals.delete(request.id);
+      resolveDecision({ decision: "deny", outcome: "cancelled" });
+      throw error;
+    }
+  }
+
+  private async finishApproval(
+    waiter: PendingApprovalWaiter,
+    resolution: HumanApprovalResolution,
+  ): Promise<void> {
+    if (!this.pendingApprovals.delete(waiter.request.id)) return;
+    if (waiter.timer !== null) clearTimeout(waiter.timer);
+    try {
+      await this.store.mutate((database) => {
+        const run = database.runs.find((item) => item.id === waiter.request.runId);
+        if (run === undefined) return;
+        if (run.pendingApproval?.id === waiter.request.id) run.pendingApproval = null;
+        if (run.status === "waiting_approval") run.status = "running";
+      });
+    } finally {
+      waiter.resolve(resolution);
+    }
+  }
+
+  private async cancelPendingApprovals(agentId: string): Promise<void> {
+    const waiters = [...this.pendingApprovals.values()].filter(
+      (waiter) => waiter.agentId === agentId,
+    );
+    await Promise.all(
+      waiters.map((waiter) =>
+        this.finishApproval(waiter, { decision: "deny", outcome: "cancelled" }),
+      ),
+    );
+  }
+}
+
+function boundedSafeText(text: string, maximum: number): string {
+  const safe = redactSensitiveText(text).replace(/\0/g, "").trim();
+  return safe.length <= maximum ? safe : safe.slice(0, maximum - 1) + "…";
 }

@@ -8,6 +8,7 @@ import type {
 import { redactMonitorInput } from "./semantic-intent-monitor.js";
 import { remediationForSemantic, steeringPrompt } from "./steering-policy.js";
 import type { TraceRecord } from "./trace.js";
+import type { HumanApprovalReason } from "./types.js";
 import { TrajectoryState } from "./trajectory-state.js";
 
 export const SEMANTIC_RISK_ELEVATED = 0.6;
@@ -15,12 +16,16 @@ export const SEMANTIC_REASONING_STEER_RISK = 0.78;
 export const SEMANTIC_ACTION_BLOCK_RISK = 0.8;
 export const SEMANTIC_MIN_CONFIDENCE = 0.65;
 
-export type IntentDecision = "allow" | "steer" | "decline" | "interrupt";
+export type IntentDecision = "allow" | "steer" | "decline" | "interrupt" | "human_review";
 
 export interface IntentControllerResult {
   decision: IntentDecision;
   finding?: Finding;
   steer?: string;
+  humanReviewReason?: Extract<
+    HumanApprovalReason,
+    "semantic_uncertainty" | "semantic_unavailable"
+  >;
 }
 
 /**
@@ -71,7 +76,7 @@ export class IntentController {
 
   shouldReviewAction(action: SemanticProposedAction): boolean {
     if (this.state.currentRisk() >= SEMANTIC_RISK_ELEVATED) return true;
-    if (action.type === "command") return isHighImpactCommand(action.command);
+    if (action.type === "command") return isHighConsequenceCommand(action.command);
     return isConsequentialFileChange(action);
   }
 
@@ -94,6 +99,17 @@ export class IntentController {
         assessment.conflictsWithTask &&
         assessment.riskScore >= SEMANTIC_ACTION_BLOCK_RISK &&
         assessment.confidence >= SEMANTIC_MIN_CONFIDENCE;
+      const needsHumanJudgement =
+        !block &&
+        assessment.conflictsWithTask &&
+        assessment.riskScore >= SEMANTIC_RISK_ELEVATED;
+      if (needsHumanJudgement) {
+        return {
+          decision: "human_review",
+          humanReviewReason: "semantic_uncertainty",
+          finding: findingFor(assessment, action.seq, action.type, "human_review"),
+        };
+      }
       if (!block) {
         return {
           decision: "allow",
@@ -125,9 +141,17 @@ export class IntentController {
   }
 }
 
-function isHighImpactCommand(command: string): boolean {
-  return /\b(?:git\s+push|npm\s+publish|cargo\s+publish|gem\s+push|twine\s+upload|docker\s+push|deploy|release|terraform\s+apply|kubectl\s+(?:apply|delete)|helm\s+(?:install|upgrade|uninstall)|rm\s+-rf|git\s+(?:reset\s+--hard|clean\s+-[^\s]*f)|(?:drop|truncate)\s+(?:database|table|schema))\b/i.test(
-    command,
+export function isHighConsequenceCommand(command: string): boolean {
+  const explicitEffect =
+    /\b(?:git\s+push|npm\s+publish|cargo\s+publish|gem\s+push|twine\s+upload|docker\s+push|terraform\s+apply|kubectl\s+(?:apply|delete)|helm\s+(?:install|upgrade|uninstall)|rm\s+-rf|git\s+(?:reset\s+--hard|clean\s+-[^\s]*f)|(?:drop|truncate)\s+(?:database|table|schema))\b/i;
+  const taskRunnerEffect =
+    /\b(?:npm|pnpm|yarn)\s+(?:run\s+)?(?:deploy|release)\b|\b(?:make|just)\s+(?:deploy|release)\b/i;
+  const deployExecutable =
+    /(?:^|[;&|]\s*|["'])\s*(?:\.\/)?(?:[\w.-]+\/)*(?:deploy|release)(?:\.sh)?\b/i;
+  return (
+    explicitEffect.test(command) ||
+    taskRunnerEffect.test(command) ||
+    deployExecutable.test(command)
   );
 }
 
@@ -194,16 +218,17 @@ function monitorFailure(
   required: boolean,
   originalUserTask = "the delegated task",
 ): IntentControllerResult {
-  const decision: IntentDecision = required ? "decline" : "allow";
+  const decision: IntentDecision = required ? "human_review" : "allow";
   const steer = required
     ? steeringPrompt(originalUserTask, "scope_expansion", true)
     : undefined;
   return {
     decision,
+    ...(required ? { humanReviewReason: "semantic_unavailable" as const } : {}),
     finding: {
       check: "semantic-intent",
       code: "semantic-monitor-unavailable",
-      severity: required ? "violation" : "warn",
+      severity: "warn",
       seq,
       evidence: [seq],
       message: `Semantic review failed at the ${checkpoint} checkpoint: ${safeError(error)}.`,

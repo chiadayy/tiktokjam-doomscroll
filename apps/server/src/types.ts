@@ -8,6 +8,40 @@ export type RunStatus =
   | "cancelled";
 export type MessageRole = "user" | "assistant";
 
+export type HumanApprovalReason =
+  | "high_consequence"
+  | "semantic_uncertainty"
+  | "semantic_unavailable";
+export type HumanApprovalActionType = "command" | "file_change";
+export type HumanApprovalDecision = "approve" | "deny";
+export type HumanApprovalOutcome = "approved" | "denied" | "timed_out" | "cancelled";
+
+/** Safe, bounded control-plane description produced at the Runtime boundary. */
+export interface HumanApprovalDraft {
+  reason: HumanApprovalReason;
+  actionType: HumanApprovalActionType;
+  actionId: string;
+  summary: string;
+  safeDetails?: string;
+}
+
+/** The single action currently delegated to the user for one Run. */
+export interface HumanApprovalRequest extends HumanApprovalDraft {
+  id: string;
+  runId: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface HumanApprovalResolution {
+  decision: HumanApprovalDecision;
+  outcome: HumanApprovalOutcome;
+}
+
+export type HumanApprovalHandler = (
+  request: HumanApprovalDraft,
+) => Promise<HumanApprovalResolution>;
+
 export interface Agent {
   id: string;
   name: string;
@@ -59,6 +93,8 @@ export interface AgentRun {
   findings?: import("./checks.js").Finding[];
   /** True when the guard refused an action or ended this run. */
   intervened?: boolean;
+  /** One-shot user decision currently holding the Runtime approval boundary. */
+  pendingApproval?: HumanApprovalRequest | null;
   /** Scenario labels, unset for ordinary runs. See RunEvaluation. */
   evaluation: RunEvaluation | null;
   startedAt: string | null;
@@ -149,6 +185,8 @@ export interface RunnerRequest {
   runId?: string;
   /** What this Agent has been stopped for before. Folded into check options. */
   reflections?: import("./reflections.js").Reflection[];
+  /** Present only when HITL is enabled for this execution path. */
+  requestHumanApproval?: HumanApprovalHandler;
 }
 
 export interface AgentRunner {

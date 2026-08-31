@@ -31,6 +31,10 @@ const updateAgentBody = createAgentBody.partial().refine(
 const messageBody = z.object({
   content: z.string().trim().min(1).max(50_000),
 });
+const approvalBody = z.object({
+  approvalId: z.string().uuid(),
+  decision: z.enum(["approve", "deny"]),
+});
 
 export async function createApp(
   config: AppConfig,
@@ -123,6 +127,8 @@ export async function createApp(
 
   app.get("/api/system", async () => service.systemInfo());
 
+  app.get("/api/admin/overview", async () => service.adminOverview());
+
   app.get("/api/agents", async () => ({ agents: service.listAgents() }));
 
   app.post("/api/agents", async (request, reply) => {
@@ -177,6 +183,12 @@ export async function createApp(
   app.get("/api/runs/:id", async (request) => {
     const { id } = runIdParams.parse(request.params);
     return { run: service.getRun(id) };
+  });
+
+  app.post("/api/runs/:id/approval", async (request) => {
+    const { id } = runIdParams.parse(request.params);
+    const body = approvalBody.parse(request.body);
+    return { run: await service.resolveApproval(id, body.approvalId, body.decision) };
   });
 
   /**

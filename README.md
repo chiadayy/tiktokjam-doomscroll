@@ -519,7 +519,9 @@ scripts/setup-rotation-scenario.sh <agent-id> --inject   # skip the paid runs, w
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
 | `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review. In the container Runtime, this also uses a verified `read-only` + `on-request` policy so workspace writes and network effects pause at an approval boundary before execution. |
 | `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional model override for semantic review. |
-| `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required high-impact reviews fail closed; reasoning-only reviews fail open with a warning. |
+| `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required action reviews delegate to HITL when available and otherwise fail closed; reasoning-only reviews fail open with a warning. |
+| `HITL_ENABLED` | `false` | Enable one-shot human confirmation for high-consequence commands, semantic uncertainty, and unavailable required semantic reviews. Uses the same verified `read-only` + `on-request` Runtime boundary; routine approvals remain automatic. |
+| `HITL_TIMEOUT_MS` | `120000` | Maximum time a Runtime approval may wait for a person. Timeout denies that action and lets the turn continue. |
 | `LOCAL_POC_DATA_ROOT` | platform-specific | Local metadata / workspace / session directory for `npm run poc`. |
 
 The default sensitive markers: `.env`, `id_rsa`, `id_ed25519`, `.pem`, `.ssh/`,

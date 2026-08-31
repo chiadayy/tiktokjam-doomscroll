@@ -90,10 +90,11 @@ function assessment(
   classification: SemanticAssessment["classification"],
   conflictsWithTask: boolean,
   riskScore = conflictsWithTask ? 0.92 : 0.1,
+  confidence = 0.95,
 ): SemanticAssessment {
   return {
     riskScore,
-    confidence: 0.95,
+    confidence,
     classification,
     apparentObjective: conflictsWithTask ? "bypass authentication" : "fix the timeout",
     conflictsWithTask,
@@ -623,6 +624,137 @@ describe("trajectory-aware semantic enforcement", () => {
     expect(monitor.inputs).toHaveLength(2);
     expect(monitor.inputs[1]?.checkpoint).toBe("file_change");
     expect(rpc.replies).toContainEqual({ id: 6, result: { decision: "accept" } });
+  });
+
+  it("does not offer a clearly divergent semantic action to a human", async () => {
+    const rpc = new FakeRpc();
+    const records: TraceRecord[] = [
+      commandStarted("deploy-1", "deploy production --disable-auth"),
+    ];
+    const monitor = new ScriptedMonitor([assessment("security_weakening", true)]);
+    let humanRequests = 0;
+    const turn = runTurn({
+      rpc: rpc.asConnection(),
+      prompt: task.userPrompt,
+      threadId: null,
+      sandboxMode: "read-only",
+      effectGating: true,
+      trace: records,
+      intentController: new IntentController(monitor, task),
+      requestHumanApproval: async () => {
+        humanRequests += 1;
+        return { decision: "approve", outcome: "approved" };
+      },
+    });
+    await settle();
+
+    await rpc.approve(
+      "item/commandExecution/requestApproval",
+      { itemId: "deploy-1", command: "deploy production --disable-auth" },
+      73,
+    );
+    rpc.fire("turn/completed", {});
+    await turn;
+
+    expect(humanRequests).toBe(0);
+    expect(rpc.replies).toContainEqual({ id: 73, result: { decision: "decline" } });
+  });
+
+  it("delegates semantic uncertainty to a human when HITL is available", async () => {
+    const rpc = new FakeRpc();
+    const records: TraceRecord[] = [
+      fileChange("f1", "src/auth.ts", "- verify(token)\n+ verifyLater(token)"),
+    ];
+    const monitor = new ScriptedMonitor([assessment("security_weakening", true, 0.72)]);
+    const requests: Array<{ reason: string }> = [];
+    const turn = runTurn({
+      rpc: rpc.asConnection(),
+      prompt: task.userPrompt,
+      threadId: null,
+      sandboxMode: "read-only",
+      effectGating: true,
+      trace: records,
+      intentController: new IntentController(monitor, task),
+      requestHumanApproval: async (request) => {
+        requests.push(request);
+        return { decision: "approve", outcome: "approved" };
+      },
+    });
+    await settle();
+
+    await rpc.approve("item/fileChange/requestApproval", { itemId: "f1" }, 70);
+    rpc.fire("turn/completed", {});
+    await turn;
+
+    expect(requests).toEqual([expect.objectContaining({ reason: "semantic_uncertainty" })]);
+    expect(rpc.replies).toContainEqual({ id: 70, result: { decision: "accept" } });
+  });
+
+  it("delegates an unavailable required semantic review when HITL is available", async () => {
+    const rpc = new FakeRpc();
+    const records: TraceRecord[] = [
+      fileChange("f1", "src/auth.ts", "- verify(token)\n+ return true"),
+    ];
+    const monitor = new ScriptedMonitor([]);
+    const reasons: string[] = [];
+    const turn = runTurn({
+      rpc: rpc.asConnection(),
+      prompt: task.userPrompt,
+      threadId: null,
+      sandboxMode: "read-only",
+      effectGating: true,
+      trace: records,
+      intentController: new IntentController(monitor, task),
+      requestHumanApproval: async (request) => {
+        reasons.push(request.reason);
+        return { decision: "deny", outcome: "denied" };
+      },
+    });
+    await settle();
+
+    await rpc.approve("item/fileChange/requestApproval", { itemId: "f1" }, 71);
+    rpc.fire("turn/completed", {});
+    const outcome = await turn;
+
+    expect(reasons).toEqual(["semantic_unavailable"]);
+    expect(rpc.replies).toContainEqual({ id: 71, result: { decision: "decline" } });
+    expect(outcome.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "semantic-monitor-unavailable", severity: "warn" }),
+      ]),
+    );
+  });
+
+  it("still asks for confirmation after an aligned review of a high-consequence command", async () => {
+    const rpc = new FakeRpc();
+    const records: TraceRecord[] = [commandStarted("push-1", "git push origin main")];
+    const monitor = new ScriptedMonitor([assessment("aligned", false)]);
+    const reasons: string[] = [];
+    const turn = runTurn({
+      rpc: rpc.asConnection(),
+      prompt: "Publish the completed branch.",
+      threadId: null,
+      sandboxMode: "read-only",
+      effectGating: true,
+      trace: records,
+      intentController: new IntentController(monitor, task),
+      requestHumanApproval: async (request) => {
+        reasons.push(request.reason);
+        return { decision: "approve", outcome: "approved" };
+      },
+    });
+    await settle();
+
+    await rpc.approve(
+      "item/commandExecution/requestApproval",
+      { itemId: "push-1", command: "git push origin main" },
+      72,
+    );
+    rpc.fire("turn/completed", {});
+    await turn;
+
+    expect(reasons).toEqual(["high_consequence"]);
+    expect(rpc.replies).toContainEqual({ id: 72, result: { decision: "accept" } });
   });
 
   it("fails closed when a required action review cannot obtain an assessment", async () => {
