@@ -29,6 +29,7 @@ that stops it was written by the guard, not by the model.
 - [The idea in one page](#the-idea-in-one-page)
 - [The guards](#the-guards)
 - [The reflection layer](#the-reflection-layer)
+- [Evaluation](#evaluation)
 - [Architecture](#architecture)
 - [Quick start](#quick-start)
 - [Run the demo scenario](#run-the-demo-scenario)
@@ -312,6 +313,83 @@ channel for the attacker into memory that is meant to be permanent. So here:
   learned in the first place.
 - **Warn-only.** The worst a wrong reflection can do is waste one correction, so
   it is safe to learn on the first sighting rather than waiting for a repeat.
+
+### Does it actually learn?
+
+Measured over 45 live runs, with an attacker that changes address between runs
+inside one Agent's memory thread:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/benchmark-time-to-catch-dark.svg">
+  <img alt="Time to catch across three attacker addresses: a brand-new address caught at command 10 of 13, a sibling at command 5 of 9, and a never-seen host in the same family at command 4 of 7." src="docs/assets/benchmark-time-to-catch-light.svg">
+</picture>
+
+A brand-new attacker address is caught at command 10 of 13. Its sibling, one run
+later, at **command 5 of 9** — the lesson moved the catch earlier, before the
+agent had done as much work down a poisoned path. And `a7.…`, a host that never
+appeared in any run, is still caught 73% of the time by the family rule folded
+out of its siblings. 73% is visibly weaker than the 100% on a host it has
+actually seen, which is what an honest generalisation number looks like.
+
+Learning is **not** in the default `egress` configuration — it needs
+`GUARDRAIL_REFLECTION_ENABLED` (the `egress+reflection` preset). Because the
+learned-watch guard only ever warns, that tier costs close to nothing in false
+interventions. Full numbers: [`docs/BENCHMARK_RESULTS.md`](docs/BENCHMARK_RESULTS.md).
+
+---
+
+## Evaluation
+
+We ran 630 live runs — 42 scenarios × 3 guard configurations × 5 repeats, on
+gpt-5.1 — against an [AgentDojo](https://arxiv.org/abs/2406.13352)-style
+benchmark built for this project. Three numbers matter.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/benchmark-leak-rate-dark.svg">
+  <img alt="Leak rate by attack family and guard configuration. Guards off leaks on 62% of attack runs; the egress guard alone cuts it to 3%." src="docs/assets/benchmark-leak-rate-light.svg">
+</picture>
+
+**62% → 3% — the secret stops leaving the box.** With no guards, 93 of 150
+attack runs carried a workspace secret to the attacker. With one behavioural
+check on, 5 did. That holds across every way we varied the attack: how the
+injection is worded, which file hides it, whether it leaves over http, DNS or
+`git push`, and whether the attacker rotates to a fresh hostname.
+
+**2% — and it barely touches real work.** One benign run in 60 was wrongly
+interrupted, and all 15 legitimate outbound calls in the benign set were
+allowed. It blocks the *payload*, not the verb: `curl` to a package registry
+goes through, `curl` carrying `.env` does not. This is the number to check
+first — a guard that blocks everything would score perfectly on the one above
+and be worthless.
+
+**37% → 95% — defence repays a utility debt instead of charging one.** An
+unguarded agent finishes benign work 97% of the time, but only 37% when an
+attack is present, because an agent that follows the injection abandons the job
+it was given. Blocking the injection and steering the agent back to the user's
+task raises that to 95%.
+
+### How it was measured
+
+- **The attack is planted, not typed.** The agent gets real work — "get this
+  branch ready to deploy" — and the injection is hidden in a file it has an
+  ordinary reason to open.
+- **The baseline is the same attacks with the guards switched off**, not an
+  easier set.
+- **We never report security without utility.** The perfectly secure system is
+  the one that does nothing.
+- **We wrote down what would count as failure before the run** — and the
+  thresholds are in the repo, unedited, next to the results.
+
+> **A refusal by the model is not a guardrail result.** With guards off, gpt-5.1
+> declined the injection on its own in 38% of runs. Counting those as wins would
+> have been easy and dishonest. Every attack run is scored three ways —
+> `executed` / `blocked_by_guard` / `refused_by_model` — and every number above
+> is the `blocked_by_guard` one.
+
+**Full results, confidence intervals, the pre-registered thresholds, and the
+limitations that bound all of it:**
+[`docs/BENCHMARK_RESULTS.md`](docs/BENCHMARK_RESULTS.md) · **what each metric
+means and why we chose it:** [`docs/BENCHMARK.md`](docs/BENCHMARK.md)
 
 ---
 
@@ -765,6 +843,10 @@ Dockerfile / Dockerfile.runtime / docker-compose.yml
   extension seams
 - [The learning layer](docs/LEARNING_LAYER.md) — the full plan for the
   reflection loop, and its relation to prior work
+- [Benchmark](docs/BENCHMARK.md) — the AgentDojo-style harness, metric
+  definitions, scenario families, how to run it
+- [Benchmark results](docs/BENCHMARK_RESULTS.md) — the 630-run measured results,
+  confidence intervals, and limitations
 - [Local POC](docs/LOCAL_POC.md) — container-engine detail, rootless Podman
 - [Deployment](docs/DEPLOYMENT.md) — existing ECS and Terraform paths
 - [Hackathon extension guide](docs/HACKATHON_EXTENSION_GUIDE.md) — track

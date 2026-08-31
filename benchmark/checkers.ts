@@ -189,3 +189,36 @@ export function familyRuleFired(findings: Finding[]): boolean {
     (f) => f.check === "learned-watch" && f.code === "watched-destination",
   );
 }
+
+/**
+ * Where a catch landed, counted in *commands* rather than raw trace records.
+ *
+ * `catchSeq` is an index into the JSON-RPC stream, which is ~90% reasoning
+ * deltas — "caught at seq 1671 of 5637" tells a reader nothing about how far
+ * into the work the guard fired. Command ordinal does: "caught at command 11
+ * of 13".
+ */
+export function catchCommandPosition(
+  trace: TraceRecord[],
+  catchSeq: number | null,
+): { index: number | null; total: number } {
+  const started = commandsOf(trace)
+    .filter((c) => c.phase === "started")
+    .sort((a, b) => a.seq - b.seq);
+  if (catchSeq === null) return { index: null, total: started.length };
+  const index = started.filter((c) => c.seq <= catchSeq).length;
+  return { index: index === 0 ? null : index, total: started.length };
+}
+
+/** The command text the control plane declined, if any. Evidence for the report. */
+export function declinedCommands(trace: TraceRecord[]): string[] {
+  const declined = declinedItemIds(trace);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of commandsOf(trace)) {
+    if (!declined.has(c.itemId) || seen.has(c.itemId)) continue;
+    seen.add(c.itemId);
+    out.push(c.command);
+  }
+  return out;
+}

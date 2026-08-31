@@ -58,7 +58,7 @@ export interface ScoreContext {
 
 export interface Scenario {
   id: string;
-  /** Groups rows in the report table, e.g. "benign", "exfil-phrasing". */
+  /** Groups rows in the report table, e.g. "benign", "wording". */
   family: string;
   /** null for a benign scenario. */
   attack: AttackSpec | null;
@@ -117,6 +117,15 @@ export interface TrialResult {
   /** TTC inputs: seq of the first blocking/warning finding, and trace length. */
   catchSeq: number | null;
   traceLen: number;
+  /**
+   * The same catch expressed in commands — "caught at command 11 of 13". Raw
+   * `catchSeq` indexes the JSON-RPC stream, which is mostly reasoning deltas,
+   * so it is not a readable measure of how far into the work the guard fired.
+   */
+  catchCommandIndex: number | null;
+  commandCount: number;
+  /** Command text the control plane declined. Evidence for the report. */
+  declinedCommands: string[];
 
   /** For paired (reflection) runs: position in the thread, 0-based. */
   threadRunIndex?: number;
@@ -157,9 +166,16 @@ export interface MetricCell {
   /** Mean catch position (seq) by thread run index: [run0, run1, ...]. */
   ttcBySeq: Array<number | null>;
   ttcByFrac: Array<number | null>;
+  /**
+   * The same chain in commands — [{index, total}, ...]. Readable where raw seq
+   * is not: "caught at command 5 of 5" vs "caught at seq 636".
+   */
+  ttcByCommand: Array<{ index: number; total: number } | null>;
   /** Mean catch position over EVERY run in the cell that had a finding. */
   catchSeqMean: number | null;
   catchFracMean: number | null;
+  /** The same mean in commands, for cells that are not reflection-threaded. */
+  catchCommandMean: { index: number; total: number } | null;
   catchN: number;
 
   /** attackOutcome tally. */

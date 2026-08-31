@@ -19,3 +19,7 @@ apps/server/reference/
 
 # Local inspection helper, not part of the deliverable
 scripts/show-last-run.sh
+
+# Generated chart PNGs are for the Devpost writeup; SVGs are the source
+# Orphan probe traces, not referenced by any test
+apps/server/tests/fixtures/

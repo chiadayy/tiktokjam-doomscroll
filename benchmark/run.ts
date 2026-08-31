@@ -40,7 +40,7 @@ function parseArgs(argv: string[]): Args {
     only: null,
     configs: "off,egress",
     trials: 3,
-    paired: "rotation",
+    paired: "new-address",
     from: null,
     out: null,
     workspaceRoot: null,

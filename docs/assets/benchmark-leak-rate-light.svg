@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="740" height="564" viewBox="0 0 740 564" font-family="system-ui,-apple-system,&quot;Segoe UI&quot;,sans-serif" role="img" aria-label="Leak rate by attack variation. Guards off 62 percent, egress guard 3 percent, all guards 1 percent.">
+<rect width="740" height="564" fill="#fcfcfb"/>
+<text x="24" y="32" font-size="17" font-weight="600" fill="#0b0b0b">Did the secret leave the box?</text>
+<text x="24" y="52" font-size="12.5" fill="#52514e">Each row changes one thing about the same attack:</text>
+<rect x="24" y="66" width="11" height="11" rx="2.5" fill="#86b6ef"/>
+<text x="41" y="75.5" font-size="12" fill="#52514e">guards off</text>
+<rect x="125" y="66" width="11" height="11" rx="2.5" fill="#2a78d6"/>
+<text x="142" y="75.5" font-size="12" fill="#52514e">egress guard</text>
+<rect x="238.8" y="66" width="11" height="11" rx="2.5" fill="#104281"/>
+<text x="255.8" y="75.5" font-size="12" fill="#52514e">all guards</text>
+<line x1="228.0" y1="86" x2="228.0" y2="516" stroke="#c3c2b7" stroke-width="1"/>
+<text x="228.0" y="534" font-size="11" fill="#898781" text-anchor="middle">0%</text>
+<line x1="294.6" y1="86" x2="294.6" y2="516" stroke="#e1e0d9" stroke-width="1"/>
+<text x="294.6" y="534" font-size="11" fill="#898781" text-anchor="middle">10%</text>
+<line x1="361.1" y1="86" x2="361.1" y2="516" stroke="#e1e0d9" stroke-width="1"/>
+<text x="361.1" y="534" font-size="11" fill="#898781" text-anchor="middle">20%</text>
+<line x1="427.7" y1="86" x2="427.7" y2="516" stroke="#e1e0d9" stroke-width="1"/>
+<text x="427.7" y="534" font-size="11" fill="#898781" text-anchor="middle">30%</text>
+<line x1="494.3" y1="86" x2="494.3" y2="516" stroke="#e1e0d9" stroke-width="1"/>
+<text x="494.3" y="534" font-size="11" fill="#898781" text-anchor="middle">40%</text>
+<line x1="560.9" y1="86" x2="560.9" y2="516" stroke="#e1e0d9" stroke-width="1"/>
+<text x="560.9" y="534" font-size="11" fill="#898781" text-anchor="middle">50%</text>
+<line x1="627.4" y1="86" x2="627.4" y2="516" stroke="#e1e0d9" stroke-width="1"/>
+<text x="627.4" y="534" font-size="11" fill="#898781" text-anchor="middle">60%</text>
+<line x1="694.0" y1="86" x2="694.0" y2="516" stroke="#e1e0d9" stroke-width="1"/>
+<text x="694.0" y="534" font-size="11" fill="#898781" text-anchor="middle">70%</text>
+<text x="214" y="122" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="end">its wording</text>
+<rect x="228" y="96" width="372.8" height="12" rx="3.5" fill="#86b6ef"/>
+<text x="607.8" y="105.8" font-size="11" fill="#52514e">56%</text>
+<text x="235.0" y="120.8" font-size="11" fill="#898781">0%</text>
+<text x="235.0" y="135.8" font-size="11" fill="#898781">0%</text>
+<text x="214" y="184" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="end">the file it hides in</text>
+<rect x="228" y="158" width="432.7" height="12" rx="3.5" fill="#86b6ef"/>
+<text x="667.7" y="167.8" font-size="11" fill="#52514e">65%</text>
+<text x="235.0" y="182.8" font-size="11" fill="#898781">0%</text>
+<text x="235.0" y="197.8" font-size="11" fill="#898781">0%</text>
+<text x="214" y="246" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="end">the channel it leaves by</text>
+<rect x="228" y="220" width="399.4" height="12" rx="3.5" fill="#86b6ef"/>
+<text x="634.4" y="229.8" font-size="11" fill="#52514e">60%</text>
+<rect x="228" y="235" width="46.6" height="12" rx="3.5" fill="#2a78d6"/>
+<text x="281.6" y="244.8" font-size="11" fill="#52514e">7%</text>
+<text x="235.0" y="259.8" font-size="11" fill="#898781">0%</text>
+<text x="214" y="308" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="end">read and send split apart</text>
+<rect x="228" y="282" width="399.4" height="12" rx="3.5" fill="#86b6ef"/>
+<text x="634.4" y="291.8" font-size="11" fill="#52514e">60%</text>
+<rect x="228" y="297" width="86.5" height="12" rx="3.5" fill="#2a78d6"/>
+<text x="321.5" y="306.8" font-size="11" fill="#52514e">13%</text>
+<rect x="228" y="312" width="46.6" height="12" rx="3.5" fill="#104281"/>
+<text x="281.6" y="321.8" font-size="11" fill="#52514e">7%</text>
+<text x="214" y="370" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="end">several of these at once</text>
+<rect x="228" y="344" width="419.4" height="12" rx="3.5" fill="#86b6ef"/>
+<text x="654.4" y="353.8" font-size="11" fill="#52514e">63%</text>
+<rect x="228" y="359" width="13.3" height="12" rx="3.5" fill="#2a78d6"/>
+<text x="248.3" y="368.8" font-size="11" fill="#52514e">2%</text>
+<text x="235.0" y="383.8" font-size="11" fill="#898781">0%</text>
+<text x="214" y="432" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="end">the attacker's address</text>
+<rect x="228" y="406" width="446.0" height="12" rx="3.5" fill="#86b6ef"/>
+<text x="681.0" y="415.8" font-size="11" fill="#52514e">67%</text>
+<rect x="228" y="421" width="46.6" height="12" rx="3.5" fill="#2a78d6"/>
+<text x="281.6" y="430.8" font-size="11" fill="#52514e">7%</text>
+<text x="235.0" y="445.8" font-size="11" fill="#898781">0%</text>
+<line x1="24" y1="457" x2="716" y2="457" stroke="#c3c2b7"/>
+<text x="214" y="494" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="end">all attacks</text>
+<rect x="228" y="468" width="412.7" height="12" rx="3.5" fill="#86b6ef"/>
+<text x="647.7" y="477.8" font-size="11" fill="#52514e">62%</text>
+<rect x="228" y="483" width="20.0" height="12" rx="3.5" fill="#2a78d6"/>
+<text x="255.0" y="492.8" font-size="11" fill="#52514e">3%</text>
+<rect x="228" y="498" width="6.7" height="12" rx="3.5" fill="#104281"/>
+<text x="241.7" y="507.8" font-size="11" fill="#52514e">1%</text></svg>
