@@ -16,6 +16,7 @@ deploy/volcengine/*.tfstate*
 deploy/volcengine/terraform.tfvars
 spike-transcript.json
 apps/server/reference/
+benchmark-results/
 
 # Local inspection helper, not part of the deliverable
 scripts/show-last-run.sh
