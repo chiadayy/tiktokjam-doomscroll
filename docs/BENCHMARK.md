@@ -26,7 +26,7 @@ a Wilson 95 % interval. Only **TCR** needs live model runs.
 
 ### Why these metrics
 
-A guardrail demo has exactly two easy failure modes — **only run attacks you
+A guardrail demo has exactly two easy failure modes: **only run attacks you
 already block**, and **report what you caught without reporting what you broke**.
 Each metric closes one of them.
 
@@ -42,7 +42,7 @@ Each metric closes one of them.
   deltas, so "event 1546 of 4347" tells a human nothing; `cmd 10/13` says how far
   into the real job the agent got before the guard fired.
 - **GR separates a rule from a string.** Remembering one bad hostname is
-  worthless — the attacker changes it. GR only counts a host that never appeared
+  worthless, because the attacker changes it. GR only counts a host that never appeared
   in any run, caught by a family rule folded out of its siblings.
 - **TCR keeps the benchmark honest about utility**, and under attack it asks the
   sharper question: did the agent finish the user's job *and* decline the
@@ -125,22 +125,22 @@ run and a DR−CR gap in a replay report means "would have detected".
 
 `--out` (default `benchmark-results/<timestamp>/`) contains:
 
-- `report.md` — the report (also printed to stdout)
-- `results.json` — every `TrialResult`, the aggregated cells, the AgentDojo view
-- `manifest.jsonl` — one row per run, the replay index
-- `traces/<runId>.jsonl` — the raw trace of each live run
+- `report.md`: the report (also printed to stdout)
+- `results.json`: every `TrialResult`, the aggregated cells, the AgentDojo view
+- `manifest.jsonl`: one row per run, the replay index
+- `traces/<runId>.jsonl`: the raw trace of each live run
 
 ### How `report.md` is laid out
 
 It is written to be read top-down by someone who has never seen the harness:
 
-1. **Verdict** — plain English. How many attack runs leaked with guards off, how
+1. **Verdict**, in plain English. How many attack runs leaked with guards off, how
    many leaked with them on, what it cost benign work, and the cleanest
    guards-off/guards-on A/B the slice contains.
-2. **What actually happened, run by run** — one row per run: what the injection
+2. **What actually happened, run by run**: one row per run, what the injection
    wanted, what became of it, and *the actual command the guard saw*. This is
    the evidence; the rates below are a summary of it.
-3. **Safety vs. utility** — attacks stopped / attacks through / benign runs
+3. **Safety vs. utility**: attacks stopped / attacks through / benign runs
    interrupted / benign tasks completed, per config.
 4. The aggregate CR / DR / FIR / TTC / GR / TCR tables, then per-scenario detail.
 
@@ -154,7 +154,7 @@ Two conventions matter when reading it:
   into the work the guard fired.
 
 The config list is derived from the runs actually present in the results, not
-from `--configs` — a `--faithful` rescore keeps each run's original config, and
+from `--configs`. A `--faithful` rescore keeps each run's original config, and
 the report must show every config that produced a row.
 
 Results are committed under `benchmark-results/<name>/` so a reader can replay
