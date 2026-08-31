@@ -4,7 +4,7 @@ import { MessageContent } from "./MessageContent";
 import type { AdminOverview, Agent, AgentRun, Message, SystemInfo } from "./types";
 import { ReflectionList } from "./Reflections";
 import { Trajectory } from "./Trajectory";
-import { Admin } from "./Admin";
+import { Admin, AgentSafetyDetails } from "./Admin";
 import { parseTrace, toSteps, type TraceRecord, type TraceStep } from "./trace";
 
 const starterPrompts = [
@@ -66,11 +66,15 @@ export default function App() {
   const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null);
   const [surface, setSurface] = useState<"playground" | "admin">("playground");
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
+  const [adminAgentId, setAdminAgentId] = useState<string | null>(null);
+  const [showSafetyPanel, setShowSafetyPanel] = useState(false);
   const messageEnd = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const pollingRunIds = useRef(new Set<string>());
+  const safetyPanelOpenRef = useRef(false);
   selectedIdRef.current = selectedId;
+  safetyPanelOpenRef.current = showSafetyPanel;
 
   const selected = useMemo(
     () => agents.find((agent) => agent.id === selectedId) ?? null,
@@ -123,13 +127,31 @@ export default function App() {
     await Promise.all([refreshAgents(), api.system().then(setSystem)]);
   }, [refreshAgents]);
 
-  const openAdmin = () => {
+  const openAdmin = (agentId: string | null = null) => {
     setSurface("admin");
+    setAdminAgentId(agentId);
     setError(null);
     void api.adminOverview()
       .then(setAdminOverview)
       .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
   };
+
+  const openSafetyPanel = () => {
+    setShowSafetyPanel(true);
+    setError(null);
+    void api.adminOverview()
+      .then(setAdminOverview)
+      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+  };
+
+  useEffect(() => {
+    if (!showSafetyPanel) return;
+    const refresh = () => void api.adminOverview().then(setAdminOverview).catch(() => undefined);
+    refresh();
+    if (!liveRun) return;
+    const timer = window.setInterval(refresh, 900);
+    return () => window.clearInterval(timer);
+  }, [liveRun, showSafetyPanel]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -151,6 +173,7 @@ export default function App() {
     setSteps([]);
     setTraceRecords([]);
     setShowSettings(false);
+    setShowSafetyPanel(false);
     if (!selectedId) {
       setMessages([]);
       return;
@@ -296,6 +319,9 @@ export default function App() {
         await refreshTrace(runId, agentId);
         if (!isActiveRun(result.run)) {
           await Promise.all([refreshMessages(agentId), refreshAgents()]);
+          if (safetyPanelOpenRef.current) {
+            void api.adminOverview().then(setAdminOverview).catch(() => undefined);
+          }
           return;
         }
       }
@@ -414,7 +440,7 @@ export default function App() {
           >
             Playground
           </button>
-          <button className={surface === "admin" ? "selected" : ""} onClick={openAdmin}>
+          <button className={surface === "admin" ? "selected" : ""} onClick={() => openAdmin()}>
             Admin
           </button>
         </nav>
@@ -470,6 +496,14 @@ export default function App() {
         {surface === "admin" ? (
           <Admin
             overview={adminOverview}
+            agents={agents}
+            agentId={adminAgentId}
+            onSelectAgent={setAdminAgentId}
+            onReturnToChat={(agentId) => {
+              setSelectedId(agentId);
+              setAdminAgentId(null);
+              setSurface("playground");
+            }}
             onViewRun={(agentId, runId) => {
               setSelectedId(agentId);
               void api.run(runId).then(({ run }) => setActiveRun(run));
@@ -512,27 +546,29 @@ export default function App() {
                 <ReflectionList reflections={selected.reflections ?? []} />
               </div>
               <div className="header-actions">
-                <button
-                  className="button button-ghost"
-                  onClick={() => setShowSettings((value) => !value)}
-                  disabled={busy || selected.status === "busy"}
-                >
-                  Settings
-                </button>
-                <button
-                  className="button button-ghost"
-                  onClick={toggleAgent}
-                  disabled={busy}
-                >
-                  {selected.status === "stopped" ? "Start" : "Stop"}
-                </button>
-                <button
-                  className="button button-danger"
-                  onClick={deleteAgent}
-                  disabled={busy || selected.status === "busy"}
-                >
-                  Delete
-                </button>
+                <div className="agent-management-actions">
+                  <button
+                    className="button button-ghost"
+                    onClick={() => setShowSettings((value) => !value)}
+                    disabled={busy || selected.status === "busy"}
+                  >
+                    Settings
+                  </button>
+                  <button
+                    className="button button-ghost"
+                    onClick={toggleAgent}
+                    disabled={busy}
+                  >
+                    {selected.status === "stopped" ? "Start" : "Stop"}
+                  </button>
+                  <button
+                    className="button button-danger"
+                    onClick={deleteAgent}
+                    disabled={busy || selected.status === "busy"}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </header>
 
@@ -586,15 +622,21 @@ export default function App() {
               </form>
             )}
 
-            <section className="playground">
+            <section className={"playground " + (showSafetyPanel ? "playground-with-safety" : "")}>
+              <div className="chat-column">
               <div className="playground-topbar">
                 <div>
                   <span className="eyebrow">Playground</span>
                   <h2>Build something with your Agent</h2>
                 </div>
-                <div className="session-info">
-                  <span className="pulse" />
-                  {selected.codexThreadId ? "Session connected" : "New session"}
+                <div className="topbar-actions">
+                  <div className="session-info">
+                    <span className="pulse" />
+                    {selected.codexThreadId ? "Session connected" : "New session"}
+                  </div>
+                  <button className="safety-toggle" onClick={openSafetyPanel}>
+                    Safety
+                  </button>
                 </div>
               </div>
 
@@ -691,6 +733,24 @@ export default function App() {
                   </button>
                 </div>
               </form>
+              </div>
+              {showSafetyPanel && (
+                <aside className="chat-safety-panel" aria-label={`${selected.name} safety`}>
+                  <header className="chat-safety-header">
+                    <div><span className="eyebrow">Live safety</span><strong>{selected.name}</strong></div>
+                    <button onClick={() => setShowSafetyPanel(false)} aria-label="Close safety panel">×</button>
+                  </header>
+                  <div className="chat-safety-scroll">
+                    {adminOverview === null ? <p className="muted-copy">Loading safety evidence…</p> : (
+                      <AgentSafetyDetails overview={adminOverview} agent={selected} onViewRun={(agentId, runId) => {
+                        setShowSafetyPanel(false);
+                        setSelectedId(agentId);
+                        void api.run(runId).then(({ run }) => setActiveRun(run));
+                      }} />
+                    )}
+                  </div>
+                </aside>
+              )}
             </section>
           </>
         ) : (

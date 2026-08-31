@@ -362,12 +362,13 @@ export function fileChangesFromItem(item: Record<string, unknown>): FileChangeSu
   if (!Array.isArray(item.changes)) return [];
   return item.changes.map((entry) => {
     const change = entry as Record<string, unknown>;
+    const sourceKind = readChangeKind(change.kind);
     const rawDiff = asString(change.diff);
     const diff = rawDiff === null ? null : boundDiff(rawDiff);
-    const counts = rawDiff === null ? null : diffCounts(rawDiff);
+    const counts = rawDiff === null ? null : diffCounts(rawDiff, sourceKind);
     return {
       path: asString(change.path) ?? "Unnamed file",
-      kind: displayChangeKind(readChangeKind(change.kind)),
+      kind: displayChangeKind(sourceKind),
       additions: counts?.additions ?? null,
       deletions: counts?.deletions ?? null,
       diff,
@@ -382,7 +383,17 @@ function displayChangeKind(kind: string): FileChangeSummary["kind"] {
   return "updated";
 }
 
-export function diffCounts(diff: string): { additions: number; deletions: number } {
+/**
+ * Runtime updates use unified-diff markers, but new/deleted files arrive as
+ * raw file content. Count the latter as physical lines rather than looking
+ * for prefixes that are not present.
+ */
+export function diffCounts(
+  diff: string,
+  changeKind = "update",
+): { additions: number; deletions: number } {
+  if (changeKind === "add") return { additions: physicalLineCount(diff), deletions: 0 };
+  if (changeKind === "delete") return { additions: 0, deletions: physicalLineCount(diff) };
   let additions = 0;
   let deletions = 0;
   for (const line of diff.split("\n")) {
@@ -390,6 +401,14 @@ export function diffCounts(diff: string): { additions: number; deletions: number
     if (line.startsWith("-") && !line.startsWith("---")) deletions += 1;
   }
   return { additions, deletions };
+}
+
+function physicalLineCount(text: string): number {
+  if (text === "") return 0;
+  const lines = text.split(/\r?\n/);
+  // A trailing newline terminates the final line; it is not another blank line.
+  if (lines.at(-1) === "") lines.pop();
+  return lines.length;
 }
 
 function boundDiff(diff: string): string {
