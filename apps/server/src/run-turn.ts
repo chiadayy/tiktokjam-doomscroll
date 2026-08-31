@@ -21,15 +21,27 @@ import {
   type Check,
   type Finding,
 } from "./checks.js";
-import type { IntentController, IntentControllerResult } from "./intent-controller.js";
+import {
+  isHighConsequenceCommand,
+  type IntentController,
+  type IntentControllerResult,
+} from "./intent-controller.js";
+import { redactSensitiveText } from "./redaction/index.js";
 import type { SemanticProposedAction } from "./semantic-intent-monitor.js";
 import {
   remediationForFinding,
+  humanDecisionSteeringPrompt,
   steeringPrompt,
   type RemediationCategory,
 } from "./steering-policy.js";
 import type { TraceRecord } from "./trace.js";
-import type { RunUsage } from "./types.js";
+import type {
+  HumanApprovalDraft,
+  HumanApprovalHandler,
+  HumanApprovalReason,
+  HumanApprovalResolution,
+  RunUsage,
+} from "./types.js";
 
 /**
  * Most soft warning corrections one turn may receive from deterministic checks.
@@ -84,6 +96,8 @@ export interface TurnOptions {
   semanticEnforcement?: boolean;
   /** The Runtime is expected to approval-gate writes and external effects. */
   effectGating?: boolean;
+  /** Optional one-shot delegation to the control plane. */
+  requestHumanApproval?: HumanApprovalHandler;
 }
 
 export interface TurnOutcome {
@@ -104,6 +118,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   const intentController = options.intentController;
   const semanticEnforcement = options.semanticEnforcement ?? false;
   const effectGating = options.effectGating ?? semanticEnforcement;
+  const requestHumanApproval = options.requestHumanApproval;
 
   // Collected as notifications arrive.
   const messages: string[] = [];
@@ -127,6 +142,9 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
   // Deterministic and semantic blocks share this set. Stable item IDs prevent
   // multiple findings for one action from counting as multiple attempts.
   const blockedActions = new Set<string>();
+  // A user denial is not a safety strike. Exact retries are declined quietly
+  // without creating another prompt or touching blockedActions.
+  const humanDeniedActions = new Set<string>();
 
   const keyOf = (finding: Finding, trace: TraceRecord[]): string => {
     const action = actionIdentityAt(finding.seq, trace);
@@ -291,13 +309,10 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     kind: "command" | "file_change",
     params: Record<string, unknown>,
     id: number | string,
-  ): void {
+  ): void | Promise<void> {
     const deterministic = deterministicFindingsForApproval(kind, params);
     const violation = deterministic.find((finding) => finding.severity === "violation");
-    if (violation === undefined) {
-      rpc.reply(id, { decision: "accept" });
-      return;
-    }
+    if (violation === undefined) return decidePermittedAction(kind, params, id);
     blockAction(
       kind,
       params,
@@ -339,13 +354,39 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
         (finding) => finding.requestSemanticReview === true,
       );
       const result = await intentController.reviewAction(traceAtCheckpoint, action, forceReview);
+      if (result.decision === "human_review") {
+        if (requestHumanApproval === undefined) {
+          if (result.finding !== undefined) {
+            findings.push({
+              ...result.finding,
+              severity: "violation",
+              metadata: {
+                ...result.finding.metadata,
+                controllerDecision: "decline",
+                humanReviewUnavailable: true,
+              },
+            });
+          }
+          blockAction(kind, params, id, "scope_expansion", result.steer);
+          return;
+        }
+        if (result.finding !== undefined) findings.push(result.finding);
+        await decideWithHuman(
+          kind,
+          params,
+          id,
+          action,
+          result.humanReviewReason ?? "semantic_uncertainty",
+        );
+        return;
+      }
       if (result.finding !== undefined) findings.push(result.finding);
       if (result.decision === "allow" || result.decision === "steer") {
-        rpc.reply(id, { decision: "accept" });
         if (result.decision === "steer" && result.steer !== undefined) {
           intervened = true;
           sendSteer(result.steer);
         }
+        await decidePermittedAction(kind, params, id, action);
         return;
       }
 
@@ -355,6 +396,76 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     });
     semanticQueue = reviewAndApply;
     await reviewAndApply;
+  }
+
+  function decidePermittedAction(
+    kind: "command" | "file_change",
+    params: Record<string, unknown>,
+    id: number | string,
+    knownAction?: SemanticProposedAction,
+  ): void | Promise<void> {
+    const action = knownAction ?? proposedActionOf(kind, params, records);
+    if (
+      requestHumanApproval === undefined ||
+      action === null ||
+      action.type !== "command" ||
+      !isHighConsequenceCommand(action.command)
+    ) {
+      rpc.reply(id, { decision: "accept" });
+      return;
+    }
+    return decideWithHuman(kind, params, id, action, "high_consequence");
+  }
+
+  async function decideWithHuman(
+    kind: "command" | "file_change",
+    params: Record<string, unknown>,
+    id: number | string,
+    action: SemanticProposedAction,
+    reason: HumanApprovalReason,
+  ): Promise<void> {
+    if (requestHumanApproval === undefined) {
+      rpc.reply(id, { decision: "accept" });
+      return;
+    }
+    const actionKey = humanActionIdentity(action);
+    if (humanDeniedActions.has(actionKey)) {
+      rpc.reply(id, { decision: "decline" });
+      findings.push(humanApprovalFinding("approval-denied-retry", reason, action, "denied"));
+      return;
+    }
+
+    const request = humanApprovalDraft(reason, action);
+    findings.push(humanApprovalFinding("approval-requested", reason, action, "requested"));
+    let resolution: HumanApprovalResolution;
+    try {
+      resolution = await requestHumanApproval(request);
+    } catch {
+      // The service callback is part of the control boundary. If it fails,
+      // never leave Codex paused and never turn that failure into permission.
+      resolution = { decision: "deny", outcome: "cancelled" };
+    }
+
+    const code =
+      resolution.outcome === "approved"
+        ? "approval-approved"
+        : resolution.outcome === "timed_out"
+          ? "approval-timed-out"
+          : resolution.outcome === "cancelled"
+            ? "approval-cancelled"
+            : "approval-denied";
+    findings.push(humanApprovalFinding(code, reason, action, resolution.outcome));
+    if (resolution.decision === "approve") {
+      rpc.reply(id, { decision: "accept" });
+      return;
+    }
+
+    rpc.reply(id, { decision: "decline" });
+    intervened = true;
+    humanDeniedActions.add(actionKey);
+    if (resolution.outcome === "denied" || resolution.outcome === "timed_out") {
+      sendSteer(humanDecisionSteeringPrompt(resolution.outcome));
+    }
   }
 
   function commandApproval(
@@ -646,6 +757,77 @@ function proposedActionOf(
     .filter((entry) => entry.seq === latestSeq)
     .map((entry) => ({ path: entry.path, kind: entry.kind, diff: entry.diff }));
   return { type: "file_change", seq: latestSeq, itemId, changes };
+}
+
+function humanActionIdentity(action: SemanticProposedAction): string {
+  if (action.type === "command") {
+    return `command:${action.command.replace(/\s+/g, " ").trim()}`;
+  }
+  return `file_change:${JSON.stringify(action.changes)}`;
+}
+
+function humanApprovalDraft(
+  reason: HumanApprovalReason,
+  action: SemanticProposedAction,
+): HumanApprovalDraft {
+  if (action.type === "command") {
+    const command = boundedSafeText(action.command, 1_200);
+    return {
+      reason,
+      actionType: "command",
+      actionId: action.itemId || `seq:${action.seq}`,
+      summary: boundedSafeText(`Run: ${action.command.replace(/\s+/g, " ").trim()}`, 240),
+      safeDetails: command,
+    };
+  }
+
+  const paths = action.changes.map((change) => change.path).filter(Boolean);
+  const target = paths.length === 0 ? "workspace files" : paths.slice(0, 3).join(", ");
+  const details = action.changes
+    .slice(0, 4)
+    .map((change) => `${change.kind} ${change.path}\n${change.diff}`)
+    .join("\n\n");
+  return {
+    reason,
+    actionType: "file_change",
+    actionId: action.itemId || `seq:${action.seq}`,
+    summary: boundedSafeText(`Modify ${target}`, 240),
+    ...(details === "" ? {} : { safeDetails: boundedSafeText(details, 2_000) }),
+  };
+}
+
+function boundedSafeText(text: string, maximum: number): string {
+  const safe = redactSensitiveText(text).replace(/\0/g, "").trim();
+  return safe.length <= maximum ? safe : safe.slice(0, maximum - 1) + "…";
+}
+
+function humanApprovalFinding(
+  code: string,
+  reason: HumanApprovalReason,
+  action: SemanticProposedAction,
+  outcome: "requested" | HumanApprovalResolution["outcome"],
+): Finding {
+  const messages: Record<typeof outcome, string> = {
+    requested: "A one-shot human decision was requested for this action.",
+    approved: "The user approved this specific action once.",
+    denied: "The user denied this action.",
+    timed_out: "Human approval timed out, so the action was denied.",
+    cancelled: "The pending human approval was cancelled with the run.",
+  };
+  return {
+    check: "human-approval",
+    code,
+    severity: "info",
+    seq: action.seq,
+    evidence: [action.seq],
+    message: messages[outcome],
+    metadata: {
+      reason,
+      actionType: action.type,
+      actionId: action.itemId || `seq:${action.seq}`,
+      outcome,
+    },
+  };
 }
 
 /**

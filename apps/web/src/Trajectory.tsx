@@ -7,8 +7,14 @@
 // disagreement.
 
 import { useEffect, useMemo, useState } from "react";
-import { isOurs, isStreamingNoise, type TraceRecord, type TraceStep } from "./trace";
-import type { AgentRun, Finding } from "./types";
+import {
+  isOurs,
+  isStreamingNoise,
+  type FileChangeSummary,
+  type TraceRecord,
+  type TraceStep,
+} from "./trace";
+import type { AgentRun, Finding, HumanApprovalRequest } from "./types";
 
 export interface TrajectoryProps {
   steps: TraceStep[];
@@ -23,6 +29,9 @@ export interface TrajectoryProps {
    * from the `x-redactions` response header. Zero when nothing was altered.
    */
   redactions: number;
+  pendingApproval?: HumanApprovalRequest | null;
+  approvalBusy?: boolean;
+  onApprovalDecision?: (decision: "approve" | "deny") => void;
 }
 
 export function Trajectory({
@@ -32,6 +41,9 @@ export function Trajectory({
   status,
   findings,
   redactions,
+  pendingApproval = null,
+  approvalBusy = false,
+  onApprovalDecision,
 }: TrajectoryProps) {
   const [view, setView] = useState<"activity" | "technical">("activity");
   const [showNoise, setShowNoise] = useState(false);
@@ -54,7 +66,8 @@ export function Trajectory({
     (finding) => isSemanticRedirect(finding),
   ).length;
   const learnedCount = findings.filter((finding) => finding.check === "learned-watch").length;
-  const summary = runSummary(actionCount, warningCount, blockedCount);
+  const fileSummary = fileChangeTotals(steps);
+  const summary = runSummary(actionCount, warningCount, blockedCount, fileSummary);
   const visibleIntervention =
     blockedCount > 0
       ? {
@@ -112,7 +125,13 @@ export function Trajectory({
         </div>
 
         <span className="trajectory-count">
-          {live ? "Running" : status === "completed" ? "Completed" : status}
+          {status === "waiting_approval"
+            ? "Approval needed"
+            : live
+              ? "Running"
+              : status === "completed"
+                ? "Completed"
+                : status}
         </span>
       </header>
 
@@ -132,7 +151,16 @@ export function Trajectory({
       )}
 
       {open && view === "activity" && (
-        <ActivityList rows={rows} live={live} records={records.length} status={status} />
+        <>
+          <ActivityList rows={rows} live={live} records={records.length} status={status} />
+          {pendingApproval !== null && onApprovalDecision !== undefined && (
+            <ApprovalCard
+              request={pendingApproval}
+              busy={approvalBusy}
+              onDecision={onApprovalDecision}
+            />
+          )}
+        </>
       )}
 
       {open && view === "technical" && (
@@ -151,6 +179,70 @@ export function Trajectory({
           />
         </div>
       )}
+    </section>
+  );
+}
+
+const APPROVAL_REASON_COPY: Record<HumanApprovalRequest["reason"], string> = {
+  high_consequence: "This action creates an external or difficult-to-reverse effect and requires confirmation.",
+  semantic_uncertainty:
+    "Automated supervision detected a possible conflict with the delegated task but could not justify an automatic refusal.",
+  semantic_unavailable:
+    "Automated safety review is temporarily unavailable for this consequential action.",
+};
+
+function ApprovalCard({
+  request,
+  busy,
+  onDecision,
+}: {
+  request: HumanApprovalRequest;
+  busy: boolean;
+  onDecision: (decision: "approve" | "deny") => void;
+}) {
+  return (
+    <section className="approval-card" aria-live="polite" aria-labelledby="approval-title">
+      <div className="approval-heading">
+        <span className="approval-icon" aria-hidden="true">?</span>
+        <div>
+          <span className="eyebrow">Decision required</span>
+          <h3 id="approval-title">Approval needed</h3>
+        </div>
+      </div>
+      <dl className="approval-copy">
+        <div>
+          <dt>The Agent wants to</dt>
+          <dd>{request.summary}</dd>
+        </div>
+        <div>
+          <dt>Why you&apos;re being asked</dt>
+          <dd>{APPROVAL_REASON_COPY[request.reason]}</dd>
+        </div>
+      </dl>
+      {request.safeDetails !== undefined && request.safeDetails.trim() !== "" && (
+        <details className="approval-details">
+          <summary>Details</summary>
+          <pre>{request.safeDetails}</pre>
+        </details>
+      )}
+      <div className="approval-actions">
+        <button
+          type="button"
+          className="button button-danger"
+          disabled={busy}
+          onClick={() => onDecision("deny")}
+        >
+          Deny
+        </button>
+        <button
+          type="button"
+          className="button button-primary"
+          disabled={busy}
+          onClick={() => onDecision("approve")}
+        >
+          {busy ? "Submitting…" : "Approve once"}
+        </button>
+      </div>
     </section>
   );
 }
@@ -208,6 +300,7 @@ interface ActivityRow {
   tone: "normal" | "warning" | "blocked" | "running";
   title: string;
   detail: string | null;
+  files?: FileChangeSummary[];
 }
 
 function activityRows(
@@ -258,6 +351,7 @@ function rowForStep(step: TraceStep, live: boolean): ActivityRow {
     tone: failed ? "blocked" : running ? "running" : step.kind === "steer" ? "warning" : "normal",
     title: activityTitle(step, running),
     detail: step.kind === "thinking" ? null : step.detail,
+    ...(step.files === undefined ? {} : { files: step.files }),
   };
 }
 
@@ -315,6 +409,41 @@ function readableFileChange(title: string): string {
 }
 
 function rowForFinding(finding: Finding, key: string): ActivityRow | null {
+  if (finding.check === "human-approval") {
+    const outcome = finding.metadata?.outcome;
+    if (outcome === "requested") {
+      return {
+        key,
+        seq: finding.seq,
+        icon: "?",
+        tone: "normal",
+        title: "Approval requested",
+        detail: "The Runtime paused before a user-delegated action.",
+      };
+    }
+    if (outcome === "approved") {
+      return {
+        key,
+        seq: finding.seq,
+        icon: "✓",
+        tone: "normal",
+        title: "Approved once",
+        detail: "The user approved this specific action.",
+      };
+    }
+    return {
+      key,
+      seq: finding.seq,
+      icon: "×",
+      tone: "warning",
+      title: outcome === "timed_out" ? "Approval timed out" : "Action denied by user",
+      detail:
+        outcome === "timed_out"
+          ? "The action was declined and the Agent continued without it."
+          : "The action was declined without counting as a safety violation.",
+    };
+  }
+
   if (finding.check === "learned-watch") {
     return {
       key,
@@ -416,6 +545,7 @@ function ActivityList(props: {
           <span className="step-icon" aria-hidden="true">{row.icon}</span>
           <div className="step-body">
             <span className="step-title">{row.title}</span>
+            {row.files !== undefined && <FileChangeList files={row.files} />}
             {row.detail !== null && row.detail.trim() !== "" && (
               <details className="activity-row-details">
                 <summary>Details</summary>
@@ -429,8 +559,55 @@ function ActivityList(props: {
   );
 }
 
-function runSummary(actions: number, warnings: number, blocked: number): string {
+function FileChangeList({ files }: { files: FileChangeSummary[] }) {
+  return (
+    <div className="file-change-list">
+      {files.map((file, index) => (
+        <details className="file-change" key={`${file.path}:${index}`}>
+          <summary>
+            <span className="file-change-kind">{file.kind}</span>
+            <code>{file.path}</code>
+            {(file.additions !== null || file.deletions !== null) && (
+              <span className="file-change-counts">
+                {file.additions !== null && `+${file.additions}`}
+                {file.deletions !== null && ` −${file.deletions}`}
+              </span>
+            )}
+          </summary>
+          {file.diff !== null && file.diff !== "" && (
+            <pre className="file-change-diff">{file.diff}</pre>
+          )}
+          {file.truncated && <span className="file-change-truncated">Diff truncated. Full evidence remains in Technical details.</span>}
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function fileChangeTotals(steps: TraceStep[]): { files: number; additions: number; deletions: number } {
+  const files = steps.flatMap((step) => step.files ?? []);
+  return {
+    files: files.length,
+    additions: files.reduce((total, file) => total + (file.additions ?? 0), 0),
+    deletions: files.reduce((total, file) => total + (file.deletions ?? 0), 0),
+  };
+}
+
+function runSummary(
+  actions: number,
+  warnings: number,
+  blocked: number,
+  changes: { files: number; additions: number; deletions: number },
+): string {
   const parts = [`${actions} action${actions === 1 ? "" : "s"}`];
+  if (changes.files > 0) {
+    parts.push(
+      `${changes.files} file${changes.files === 1 ? "" : "s"} changed` +
+        (changes.additions + changes.deletions > 0
+          ? ` · +${changes.additions} −${changes.deletions}`
+          : ""),
+    );
+  }
   if (warnings > 0) parts.push(`${warnings} safety warning${warnings === 1 ? "" : "s"}`);
   if (blocked > 0) parts.push(`${blocked} action${blocked === 1 ? "" : "s"} blocked`);
   return parts.join(" · ");

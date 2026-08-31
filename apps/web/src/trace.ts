@@ -35,7 +35,19 @@ export interface TraceStep {
   detail: string | null;
   /** "ok", "failed", or null while still running. */
   outcome: string | null;
+  files?: FileChangeSummary[];
 }
+
+export interface FileChangeSummary {
+  path: string;
+  kind: "added" | "updated" | "deleted";
+  additions: number | null;
+  deletions: number | null;
+  diff: string | null;
+  truncated: boolean;
+}
+
+export const MAX_ACTIVITY_DIFF_CHARS = 8_000;
 
 /** Split a JSON Lines response into records, skipping anything unparseable. */
 export function parseTrace(text: string): TraceRecord[] {
@@ -210,12 +222,15 @@ function describeItem(record: TraceRecord, item: Record<string, unknown>): Trace
   }
 
   if (item.type === "fileChange") {
-    const changes = Array.isArray(item.changes) ? item.changes : [];
-    const paths = changes.map((entry) => {
-      const change = entry as Record<string, unknown>;
-      return `${readChangeKind(change.kind)} ${asString(change.path) ?? ""}`;
-    });
-    return { ...base, kind: "file", title: paths.join(", ") || "File change", detail: null, outcome: null };
+    const files = fileChangesFromItem(item);
+    return {
+      ...base,
+      kind: "file",
+      title: files.length === 1 ? `${files[0]?.kind} ${files[0]?.path}` : "Files changed",
+      detail: null,
+      outcome: null,
+      files,
+    };
   }
 
   // A web search is an outbound network call, so it matters for anything
@@ -340,6 +355,66 @@ function readChangeKind(kind: unknown): string {
   if (kind === null || typeof kind !== "object") return "changed";
   const type = (kind as Record<string, unknown>).type;
   return typeof type === "string" ? type : "changed";
+}
+
+/** Derive a bounded, per-file display model from one Runtime fileChange item. */
+export function fileChangesFromItem(item: Record<string, unknown>): FileChangeSummary[] {
+  if (!Array.isArray(item.changes)) return [];
+  return item.changes.map((entry) => {
+    const change = entry as Record<string, unknown>;
+    const sourceKind = readChangeKind(change.kind);
+    const rawDiff = asString(change.diff);
+    const diff = rawDiff === null ? null : boundDiff(rawDiff);
+    const counts = rawDiff === null ? null : diffCounts(rawDiff, sourceKind);
+    return {
+      path: asString(change.path) ?? "Unnamed file",
+      kind: displayChangeKind(sourceKind),
+      additions: counts?.additions ?? null,
+      deletions: counts?.deletions ?? null,
+      diff,
+      truncated: rawDiff !== null && rawDiff.length > MAX_ACTIVITY_DIFF_CHARS,
+    };
+  });
+}
+
+function displayChangeKind(kind: string): FileChangeSummary["kind"] {
+  if (kind === "add") return "added";
+  if (kind === "delete") return "deleted";
+  return "updated";
+}
+
+/**
+ * Runtime updates use unified-diff markers, but new/deleted files arrive as
+ * raw file content. Count the latter as physical lines rather than looking
+ * for prefixes that are not present.
+ */
+export function diffCounts(
+  diff: string,
+  changeKind = "update",
+): { additions: number; deletions: number } {
+  if (changeKind === "add") return { additions: physicalLineCount(diff), deletions: 0 };
+  if (changeKind === "delete") return { additions: 0, deletions: physicalLineCount(diff) };
+  let additions = 0;
+  let deletions = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) additions += 1;
+    if (line.startsWith("-") && !line.startsWith("---")) deletions += 1;
+  }
+  return { additions, deletions };
+}
+
+function physicalLineCount(text: string): number {
+  if (text === "") return 0;
+  const lines = text.split(/\r?\n/);
+  // A trailing newline terminates the final line; it is not another blank line.
+  if (lines.at(-1) === "") lines.pop();
+  return lines.length;
+}
+
+function boundDiff(diff: string): string {
+  return diff.length <= MAX_ACTIVITY_DIFF_CHARS
+    ? diff
+    : diff.slice(0, MAX_ACTIVITY_DIFF_CHARS) + "\n… diff truncated in activity view";
 }
 
 

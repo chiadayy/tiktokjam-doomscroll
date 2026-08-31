@@ -1,6 +1,13 @@
 # Agents on a Leash
 
-**TikTok Hackathon — Track 1, Kill Switch (safety & sandboxing).**
+## Project Poster
+<img width="905" height="1280" alt="agents_on_a_leash" src="https://github.com/user-attachments/assets/656816ff-4032-4e2d-8edc-9b1ab65d77e1" />
+
+## Architecture Diagram
+<img width="1280" height="889" alt="architecture_diagram" src="https://github.com/user-attachments/assets/625e2753-09f4-4e59-b7c2-72d39c82e13e" />
+
+## Motivation and Problem Statement
+**Track Chosen: Agent Launchpad: Design and Build Lightweight Agent Middleware.**
 
 An autonomous coding Agent can go off the rails **on its own**. No attacker is
 required: a bug in its reasoning loop, a bad inference, a malicious line in a
@@ -597,7 +604,9 @@ scripts/setup-rotation-scenario.sh <agent-id> --inject   # skip the paid runs, w
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
 | `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review. In the container Runtime, this also uses a verified `read-only` + `on-request` policy so workspace writes and network effects pause at an approval boundary before execution. |
 | `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional model override for semantic review. |
-| `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required high-impact reviews fail closed; reasoning-only reviews fail open with a warning. |
+| `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required action reviews delegate to HITL when available and otherwise fail closed; reasoning-only reviews fail open with a warning. |
+| `HITL_ENABLED` | `false` | Enable one-shot human confirmation for high-consequence commands, semantic uncertainty, and unavailable required semantic reviews. Uses the same verified `read-only` + `on-request` Runtime boundary; routine approvals remain automatic. |
+| `HITL_TIMEOUT_MS` | `120000` | Maximum time a Runtime approval may wait for a person. Timeout denies that action and lets the turn continue. |
 | `LOCAL_POC_DATA_ROOT` | platform-specific | Local metadata / workspace / session directory for `npm run poc`. |
 
 The default sensitive markers: `.env`, `id_rsa`, `id_ed25519`, `.pem`, `.ssh/`,

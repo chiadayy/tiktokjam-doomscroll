@@ -309,6 +309,9 @@ export class ContainerCodexRunner implements AgentRunner {
           : { approvalPolicy: securityPolicy.approvalPolicy }),
         ...(securityPolicy.semanticEnforcement ? { semanticEnforcement: true } : {}),
         ...(securityPolicy.effectGating ? { effectGating: true } : {}),
+        ...(this.config.hitlEnabled && request.requestHumanApproval !== undefined
+          ? { requestHumanApproval: request.requestHumanApproval }
+          : {}),
         // Used only when no verified approval boundary is active.
         onViolation: "interrupt",
       });

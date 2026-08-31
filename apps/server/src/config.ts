@@ -134,6 +134,12 @@ const envSchema = z.object({
   /** Empty means use the same configured provider model as the coding Agent. */
   GUARDRAIL_SEMANTIC_MODEL: z.string().default(""),
   GUARDRAIL_SEMANTIC_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(15_000),
+  /** Delegate only explicitly selected Runtime effects to a person. */
+  HITL_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  HITL_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(120_000),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
@@ -199,6 +205,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     semanticGuardEnabled: env.GUARDRAIL_SEMANTIC_ENABLED,
     semanticGuardModel: env.GUARDRAIL_SEMANTIC_MODEL.trim(),
     semanticGuardTimeoutMs: env.GUARDRAIL_SEMANTIC_TIMEOUT_MS,
+    hitlEnabled: env.HITL_ENABLED,
+    hitlTimeoutMs: env.HITL_TIMEOUT_MS,
     guardrailSensitiveMarkers: env.GUARDRAIL_SENSITIVE_MARKERS.split(",")
       .map((value) => value.trim())
       .filter((value) => value !== ""),

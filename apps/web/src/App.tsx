@@ -1,9 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, setAuthToken } from "./api";
 import { MessageContent } from "./MessageContent";
-import type { Agent, AgentRun, Message, SystemInfo } from "./types";
+import type { AdminOverview, Agent, AgentRun, Message, SystemInfo } from "./types";
 import { ReflectionList } from "./Reflections";
 import { Trajectory } from "./Trajectory";
+import { Workspace } from "./Workspace";
+import { Admin, AgentSafetyDetails } from "./Admin";
 import { parseTrace, toSteps, type TraceRecord, type TraceStep } from "./trace";
 
 const starterPrompts = [
@@ -11,6 +13,12 @@ const starterPrompts = [
   "Inspect this workspace and explain what you would improve first.",
   "Build a responsive single-page todo app with tests.",
 ];
+
+const ACTIVE_RUN_STATUSES: AgentRun["status"][] = ["queued", "running", "waiting_approval"];
+
+function isActiveRun(run: AgentRun | null): boolean {
+  return run !== null && ACTIVE_RUN_STATUSES.includes(run.status);
+}
 
 const emptyForm = {
   name: "",
@@ -56,17 +64,25 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
   const [authInput, setAuthInput] = useState("");
+  const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null);
+  const [surface, setSurface] = useState<"playground" | "admin">("playground");
+  const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
+  const [adminAgentId, setAdminAgentId] = useState<string | null>(null);
+  const [showSafetyPanel, setShowSafetyPanel] = useState(false);
+  const [showWorkspace, setShowWorkspace] = useState(false);
   const messageEnd = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const pollingRunIds = useRef(new Set<string>());
+  const safetyPanelOpenRef = useRef(false);
   selectedIdRef.current = selectedId;
+  safetyPanelOpenRef.current = showSafetyPanel;
 
   const selected = useMemo(
     () => agents.find((agent) => agent.id === selectedId) ?? null,
     [agents, selectedId],
   );
-  const liveRun = activeRun !== null && ["queued", "running"].includes(activeRun.status);
+  const liveRun = isActiveRun(activeRun);
   const safetyMemoryUpdated =
     activeRun !== null &&
     (selected?.reflections ?? []).some((reflection) => reflection.sightings.includes(activeRun.id));
@@ -82,6 +98,9 @@ export default function App() {
           status={activeRun.status}
           findings={activeRun.findings ?? []}
           redactions={traceRedactions}
+          pendingApproval={activeRun.pendingApproval ?? null}
+          approvalBusy={resolvingApprovalId === activeRun.pendingApproval?.id}
+          onApprovalDecision={(decision) => void resolveApproval(decision)}
         />
         {safetyMemoryUpdated && (
           <div className="safety-memory-updated">🧠 Safety memory updated</div>
@@ -110,6 +129,32 @@ export default function App() {
     await Promise.all([refreshAgents(), api.system().then(setSystem)]);
   }, [refreshAgents]);
 
+  const openAdmin = (agentId: string | null = null) => {
+    setSurface("admin");
+    setAdminAgentId(agentId);
+    setError(null);
+    void api.adminOverview()
+      .then(setAdminOverview)
+      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+  };
+
+  const openSafetyPanel = () => {
+    setShowSafetyPanel(true);
+    setError(null);
+    void api.adminOverview()
+      .then(setAdminOverview)
+      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+  };
+
+  useEffect(() => {
+    if (!showSafetyPanel) return;
+    const refresh = () => void api.adminOverview().then(setAdminOverview).catch(() => undefined);
+    refresh();
+    if (!liveRun) return;
+    const timer = window.setInterval(refresh, 900);
+    return () => window.clearInterval(timer);
+  }, [liveRun, showSafetyPanel]);
+
   useEffect(() => {
     mountedRef.current = true;
     void api
@@ -130,6 +175,7 @@ export default function App() {
     setSteps([]);
     setTraceRecords([]);
     setShowSettings(false);
+    setShowSafetyPanel(false);
     if (!selectedId) {
       setMessages([]);
       return;
@@ -139,7 +185,7 @@ export default function App() {
         if (selectedIdRef.current !== selectedId) return;
         const latest = result.runs[0] ?? null;
         setActiveRun(latest);
-        if (latest && ["queued", "running"].includes(latest.status)) {
+        if (isActiveRun(latest)) {
           void pollRun(latest.id, selectedId).catch((reason) =>
             setError(reason instanceof Error ? reason.message : String(reason)),
           );
@@ -244,6 +290,25 @@ export default function App() {
     setTraceRedactions(trace.redactions);
   };
 
+  const resolveApproval = async (decision: "approve" | "deny") => {
+    const approval = activeRun?.pendingApproval;
+    if (activeRun === null || approval === null || approval === undefined) return;
+    setResolvingApprovalId(approval.id);
+    setError(null);
+    try {
+      const result = await api.resolveApproval(activeRun.id, approval.id, decision);
+      if (selectedIdRef.current === activeRun.agentId) setActiveRun(result.run);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      const latest = await api.run(activeRun.id).catch(() => null);
+      if (latest !== null && selectedIdRef.current === activeRun.agentId) {
+        setActiveRun(latest.run);
+      }
+    } finally {
+      setResolvingApprovalId(null);
+    }
+  };
+
   const pollRun = async (runId: string, agentId: string) => {
     if (pollingRunIds.current.has(runId)) return;
     pollingRunIds.current.add(runId);
@@ -254,8 +319,11 @@ export default function App() {
         const result = await api.run(runId);
         if (selectedIdRef.current === agentId) setActiveRun(result.run);
         await refreshTrace(runId, agentId);
-        if (!["queued", "running"].includes(result.run.status)) {
+        if (!isActiveRun(result.run)) {
           await Promise.all([refreshMessages(agentId), refreshAgents()]);
+          if (safetyPanelOpenRef.current) {
+            void api.adminOverview().then(setAdminOverview).catch(() => undefined);
+          }
           return;
         }
       }
@@ -367,6 +435,18 @@ export default function App() {
           </div>
         </div>
 
+        <nav className="surface-nav" aria-label="Main navigation">
+          <button
+            className={surface === "playground" ? "selected" : ""}
+            onClick={() => setSurface("playground")}
+          >
+            Playground
+          </button>
+          <button className={surface === "admin" ? "selected" : ""} onClick={() => openAdmin()}>
+            Admin
+          </button>
+        </nav>
+
         <button
           className="button button-primary create-button"
           onClick={() => {
@@ -415,6 +495,24 @@ export default function App() {
       </aside>
 
       <main className="main">
+        {surface === "admin" ? (
+          <Admin
+            overview={adminOverview}
+            agents={agents}
+            agentId={adminAgentId}
+            onSelectAgent={setAdminAgentId}
+            onReturnToChat={(agentId) => {
+              setSelectedId(agentId);
+              setAdminAgentId(null);
+              setSurface("playground");
+            }}
+            onViewRun={(agentId, runId) => {
+              setSelectedId(agentId);
+              void api.run(runId).then(({ run }) => setActiveRun(run));
+              setSurface("playground");
+            }}
+          />
+        ) : <>
         {!system?.arkConfigured || !system?.codexAvailable ? (
           <div className="config-banner">
             <span>!</span>
@@ -450,27 +548,29 @@ export default function App() {
                 <ReflectionList reflections={selected.reflections ?? []} />
               </div>
               <div className="header-actions">
-                <button
-                  className="button button-ghost"
-                  onClick={() => setShowSettings((value) => !value)}
-                  disabled={busy || selected.status === "busy"}
-                >
-                  Settings
-                </button>
-                <button
-                  className="button button-ghost"
-                  onClick={toggleAgent}
-                  disabled={busy}
-                >
-                  {selected.status === "stopped" ? "Start" : "Stop"}
-                </button>
-                <button
-                  className="button button-danger"
-                  onClick={deleteAgent}
-                  disabled={busy || selected.status === "busy"}
-                >
-                  Delete
-                </button>
+                <div className="agent-management-actions">
+                  <button
+                    className="button button-ghost"
+                    onClick={() => setShowSettings((value) => !value)}
+                    disabled={busy || selected.status === "busy"}
+                  >
+                    Settings
+                  </button>
+                  <button
+                    className="button button-ghost"
+                    onClick={toggleAgent}
+                    disabled={busy}
+                  >
+                    {selected.status === "stopped" ? "Start" : "Stop"}
+                  </button>
+                  <button
+                    className="button button-danger"
+                    onClick={deleteAgent}
+                    disabled={busy || selected.status === "busy"}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </header>
 
@@ -524,15 +624,32 @@ export default function App() {
               </form>
             )}
 
-            <section className="playground">
+            <section
+              className={
+                "playground " +
+                (showSafetyPanel || showWorkspace ? "playground-with-safety" : "")
+              }
+            >
+              <div className="chat-column">
               <div className="playground-topbar">
                 <div>
                   <span className="eyebrow">Playground</span>
                   <h2>Build something with your Agent</h2>
                 </div>
-                <div className="session-info">
-                  <span className="pulse" />
-                  {selected.codexThreadId ? "Session connected" : "New session"}
+                <div className="topbar-actions">
+                  <div className="session-info">
+                    <span className="pulse" />
+                    {selected.codexThreadId ? "Session connected" : "New session"}
+                  </div>
+                  <button
+                    className="safety-toggle"
+                    onClick={() => setShowWorkspace((value) => !value)}
+                  >
+                    Workspace
+                  </button>
+                  <button className="safety-toggle" onClick={openSafetyPanel}>
+                    Safety
+                  </button>
                 </div>
               </div>
 
@@ -607,7 +724,7 @@ export default function App() {
                   disabled={
                     selected.status === "stopped" ||
                     selected.status === "busy" ||
-                    activeRun != null && ["queued", "running"].includes(activeRun.status)
+                    isActiveRun(activeRun)
                   }
                   rows={3}
                 />
@@ -621,7 +738,7 @@ export default function App() {
                       !prompt.trim() ||
                       selected.status === "stopped" ||
                       selected.status === "busy" ||
-                      (activeRun != null && ["queued", "running"].includes(activeRun.status))
+                      isActiveRun(activeRun)
                     }
                     aria-label="Send message"
                   >
@@ -629,6 +746,31 @@ export default function App() {
                   </button>
                 </div>
               </form>
+              </div>
+              {showWorkspace && (
+                <Workspace
+                  agentId={selected.id}
+                  reflections={selected.reflections ?? []}
+                  onClose={() => setShowWorkspace(false)}
+                />
+              )}
+              {showSafetyPanel && (
+                <aside className="chat-safety-panel" aria-label={`${selected.name} safety`}>
+                  <header className="chat-safety-header">
+                    <div><span className="eyebrow">Live safety</span><strong>{selected.name}</strong></div>
+                    <button onClick={() => setShowSafetyPanel(false)} aria-label="Close safety panel">×</button>
+                  </header>
+                  <div className="chat-safety-scroll">
+                    {adminOverview === null ? <p className="muted-copy">Loading safety evidence…</p> : (
+                      <AgentSafetyDetails overview={adminOverview} agent={selected} onViewRun={(agentId, runId) => {
+                        setShowSafetyPanel(false);
+                        setSelectedId(agentId);
+                        void api.run(runId).then(({ run }) => setActiveRun(run));
+                      }} />
+                    )}
+                  </div>
+                </aside>
+              )}
             </section>
           </>
         ) : (
@@ -648,6 +790,7 @@ export default function App() {
             </button>
           </div>
         )}
+        </>}
       </main>
 
       {showCreate && (

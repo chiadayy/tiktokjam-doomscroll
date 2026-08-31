@@ -1,5 +1,28 @@
 export type AgentStatus = "ready" | "busy" | "stopped" | "error";
-export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type HumanApprovalReason =
+  | "high_consequence"
+  | "semantic_uncertainty"
+  | "semantic_unavailable";
+
+export interface HumanApprovalRequest {
+  id: string;
+  runId: string;
+  reason: HumanApprovalReason;
+  actionType: "command" | "file_change";
+  actionId: string;
+  summary: string;
+  safeDetails?: string;
+  createdAt: string;
+  expiresAt: string;
+}
 
 export interface Agent {
   id: string;
@@ -73,6 +96,7 @@ export interface AgentRun {
   findings?: Finding[];
   /** True when a guard refused an action or ended the run. */
   intervened?: boolean;
+  pendingApproval?: HumanApprovalRequest | null;
   createdAt: string;
 }
 
@@ -85,4 +109,72 @@ export interface SystemInfo {
   runtimeProvider: "local-process" | "container";
   containerEngine: string | null;
   runtime: string;
+}
+
+export type AdminCategory =
+  | "data_exfiltration"
+  | "security_weakening"
+  | "scope_expansion"
+  | "destructive_divergence"
+  | "persistence"
+  | "oversight_evasion"
+  | "deception"
+  | "untrusted_instruction_adoption";
+
+export interface AdminOverview {
+  totals: {
+    runs: number;
+    intervenedRuns: number;
+    blockedActions: number;
+    redirects: number;
+    approvalRequests: number;
+    approvals: number;
+    denials: number;
+    timeouts: number;
+    recurringPatterns: number;
+    needsAttention: number;
+  };
+  categories: Array<{ category: AdminCategory; count: number }>;
+  interventions: Array<{
+    id: string;
+    at: string;
+    runId: string;
+    agentId: string;
+    agentName: string;
+    category: AdminCategory | null;
+    layer: "deterministic" | "semantic" | "memory" | "runtime" | "human";
+    outcome: "blocked" | "redirected" | "warning" | "runtime_failure" | "approved" | "denied" | "timed_out";
+    summary: string;
+  }>;
+  learnedPatterns: Array<{
+    agentId: string;
+    agentName: string;
+    subjectType: "destination" | "file" | "pattern";
+    value: string;
+    precondition: string;
+    channel: string | null;
+    firstSeenAt: string;
+    lastSeenAt: string;
+    sightings: number;
+    conversations: number | null;
+    recurring: boolean;
+    needsAttention: boolean;
+    derivedFamily: boolean;
+    effect: string;
+  }>;
+}
+
+/** One file in an Agent's workspace, as listed by the API. */
+export interface WorkspaceEntry {
+  path: string;
+  size: number;
+  modifiedAt: string;
+}
+
+/** One file's contents. `content` is a prefix when `truncated` is true. */
+export interface WorkspaceFile {
+  path: string;
+  content: string;
+  size: number;
+  truncated: boolean;
 }

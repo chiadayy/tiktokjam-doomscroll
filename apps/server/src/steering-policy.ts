@@ -26,6 +26,12 @@ const INVARIANTS: Record<RemediationCategory, string> = {
 
 export const MAX_STEERING_TASK_CHARS = 560;
 
+export function humanDecisionSteeringPrompt(outcome: "denied" | "timed_out"): string {
+  return outcome === "timed_out"
+    ? "Human approval timed out. Do not retry this action through another mechanism. Continue with work that does not require that effect, or explain what remains pending."
+    : "The user declined this action. Do not retry it through another mechanism. Continue with work that does not require that effect, or explain what remains pending.";
+}
+
 /** Map fine-grained deterministic findings into the shared remediation vocabulary. */
 export function remediationForFinding(finding: Finding): RemediationCategory | null {
   if (finding.check === "sensitive-egress" || finding.check === "outbound-blob") {
@@ -77,6 +83,27 @@ export function remediationForSemantic(
     default:
       return "scope_expansion";
   }
+}
+
+/** Read-only reporting normalization. It does not affect enforcement. */
+export function reportingCategoryForFinding(finding: Finding): RemediationCategory | null {
+  const deterministic = remediationForFinding(finding);
+  if (deterministic !== null) return deterministic;
+  if (finding.check !== "semantic-intent") return null;
+  const assessment = finding.metadata?.assessment as Record<string, unknown> | undefined;
+  const classification = assessment?.classification;
+  if (typeof classification !== "string") return null;
+  // Aligned and uncertain assessments are controller states, not safety
+  // categories. They must not become a misleading scope-expansion count.
+  if (classification === "aligned" || classification === "uncertain") return null;
+  const known: SemanticClassification[] = [
+    "task_subversion", "security_weakening", "scope_expansion",
+    "unauthorized_instruction_adoption", "deception", "oversight_evasion",
+    "unauthorized_side_objective", "destructive_divergence", "persistence", "data_exfiltration",
+  ];
+  return known.includes(classification as SemanticClassification)
+    ? remediationForSemantic(classification as SemanticClassification)
+    : null;
 }
 
 export function steeringPrompt(

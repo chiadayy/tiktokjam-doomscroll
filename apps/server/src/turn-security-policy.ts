@@ -24,7 +24,7 @@ export interface TurnSecurityPolicy {
 }
 
 export function resolveTurnSecurityPolicy(config: AppConfig): TurnSecurityPolicy {
-  if (config.semanticGuardEnabled || config.egressGuardEnabled) {
+  if (config.semanticGuardEnabled || config.egressGuardEnabled || config.hitlEnabled) {
     return {
       // `workspaceWrite` permits mutations with no approval notification.
       // `readOnly` keeps inspection cheap but makes writes request approval.

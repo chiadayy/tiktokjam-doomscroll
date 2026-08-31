@@ -9,6 +9,12 @@ import type { AppConfig } from "./config.js";
 import { HttpError } from "./errors.js";
 import { redactText } from "./redaction/index.js";
 import { traceFilePath } from "./trace.js";
+import {
+  listWorkspaceFiles,
+  readWorkspaceFile,
+  writeWorkspaceFile,
+  WorkspacePathError,
+} from "./workspace-files.js";
 import type { AgentService } from "./agent-service.js";
 
 /**
@@ -30,6 +36,15 @@ const updateAgentBody = createAgentBody.partial().refine(
 );
 const messageBody = z.object({
   content: z.string().trim().min(1).max(50_000),
+});
+const approvalBody = z.object({
+  approvalId: z.string().uuid(),
+  decision: z.enum(["approve", "deny"]),
+});
+const workspacePathQuery = z.object({ path: z.string().min(1).max(1_024) });
+const workspaceFileBody = z.object({
+  path: z.string().min(1).max(1_024),
+  content: z.string().max(1_048_576),
 });
 
 export async function createApp(
@@ -123,6 +138,8 @@ export async function createApp(
 
   app.get("/api/system", async () => service.systemInfo());
 
+  app.get("/api/admin/overview", async () => service.adminOverview());
+
   app.get("/api/agents", async () => ({ agents: service.listAgents() }));
 
   app.post("/api/agents", async (request, reply) => {
@@ -174,9 +191,63 @@ export async function createApp(
     return reply.code(202).send(result);
   });
 
+  // ---------------------------------------------------------------------
+  // Workspace files
+  // ---------------------------------------------------------------------
+  //
+  // Everything this project guards against begins with a file somebody placed
+  // in a workspace. Until these routes existed the only way to put one there,
+  // or to look at one, was a terminal — which meant the most important input to
+  // the system lived outside the product entirely.
+  //
+  // Path containment is enforced in workspace-files.ts against the Agent's own
+  // workspace root, and a rejected path is a 400 rather than a 500 because it
+  // is bad input, not a broken server.
+
+  app.get("/api/agents/:id/workspace", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    const agent = service.getAgent(id);
+    return { files: await listWorkspaceFiles(agent.workspacePath) };
+  });
+
+  app.get("/api/agents/:id/workspace/file", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    const { path: relative } = workspacePathQuery.parse(request.query);
+    const agent = service.getAgent(id);
+
+    try {
+      return { file: await readWorkspaceFile(agent.workspacePath, relative) };
+    } catch (error) {
+      if (error instanceof WorkspacePathError) throw new HttpError(400, error.message);
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new HttpError(404, "No such file in this workspace");
+      }
+      throw error;
+    }
+  });
+
+  app.put("/api/agents/:id/workspace/file", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    const body = workspaceFileBody.parse(request.body);
+    const agent = service.getAgent(id);
+
+    try {
+      return { file: await writeWorkspaceFile(agent.workspacePath, body.path, body.content) };
+    } catch (error) {
+      if (error instanceof WorkspacePathError) throw new HttpError(400, error.message);
+      throw error;
+    }
+  });
+
   app.get("/api/runs/:id", async (request) => {
     const { id } = runIdParams.parse(request.params);
     return { run: service.getRun(id) };
+  });
+
+  app.post("/api/runs/:id/approval", async (request) => {
+    const { id } = runIdParams.parse(request.params);
+    const body = approvalBody.parse(request.body);
+    return { run: await service.resolveApproval(id, body.approvalId, body.decision) };
   });
 
   /**
