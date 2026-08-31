@@ -46,6 +46,7 @@ that stops it was written by the guard, not by the model.
 - [The idea in one page](#the-idea-in-one-page)
 - [The guards](#the-guards)
 - [The reflection layer](#the-reflection-layer)
+- [What you can see while it runs](#what-you-can-see-while-it-runs)
 - [Evaluation](#evaluation)
 - [Architecture](#architecture)
 - [Quick start](#quick-start)
@@ -355,6 +356,52 @@ interventions.
 
 ---
 
+## What you can see while it runs
+
+The guards are only half of it. A guardrail nobody can inspect is a guardrail
+nobody trusts, so the same findings that drive enforcement are also the ones the
+UI renders.
+
+### The workspace, from the browser
+
+Every scenario this project guards against starts with a **file somebody put in
+a workspace** — a skill, a runbook, a checklist copied from somewhere. That file
+is the most important input to the system, and it used to be visible only from a
+terminal. Three routes under `/api/agents/:id/workspace`
+([`workspace-files.ts`](apps/server/src/workspace-files.ts),
+[`Workspace.tsx`](apps/web/src/Workspace.tsx)) let you browse what an Agent is
+reading and place a file into it.
+
+Paths arrive from a browser, so containment is enforced by **resolving the path
+and comparing it against the workspace root**, not by scanning for `..` — the
+resolver decides where a path actually lands, so any check that disagrees with
+it is the one that is wrong.
+
+### The live safety panel
+
+While a run is in flight, the Playground shows the interventions as they happen:
+which guard fired, on which command, and what the control plane replied. The
+Agent's learned reflections sit alongside as "what this Agent has learned"
+([`Reflections.tsx`](apps/web/src/Reflections.tsx)), so a warning that fires from
+memory can be traced back to the incident that taught it.
+
+### Human approval at the boundary
+
+With `HITL_ENABLED`, a guarded action pauses for a person instead of being
+resolved automatically. The approval happens at the same pre-execution barrier
+the guards use, so a human decision and a guard decision enter the run through
+one path rather than two.
+
+### Read-only admin overview
+
+[`Admin.tsx`](apps/web/src/Admin.tsx), backed by
+[`admin-report.ts`](apps/server/src/admin-report.ts), aggregates across recorded
+runs: total runs, how many were intervened in, blocked actions, redirects, and
+approval requests — plus per-Agent interventions and learned memory. Read-only by
+construction; it reports on runs, it cannot change them.
+
+---
+
 ## Evaluation
 
 We ran 630 live runs (42 scenarios × 3 guard configurations × 5 repeats, on
@@ -656,6 +703,14 @@ terraform fmt -check -recursive deploy/volcengine
 docker compose config
 ```
 
+The benchmark has its own runner, deliberately outside `npm run check` so it
+cannot slow the main suite down:
+
+```bash
+npx tsc --noEmit -p benchmark/tsconfig.json
+npx vitest run --config benchmark/vitest.config.ts   # 44 tests, no model calls
+```
+
 `npm test` runs the server suite (Vitest). Tests are grouped under
 [`apps/server/tests/`](apps/server/tests):
 
@@ -862,7 +917,18 @@ apps/
     src/trace.ts / store.ts / config.ts / workspace.ts
     tests/{checks,redaction,reflections,policy,semantic,runtime,server}/
 deploy/volcengine/         Terraform: VPC, subnet, security group, ECS, EIP
+benchmark/                 AgentDojo-style evaluation, additive and read-only
+  scenarios/               User task x injection task, six families
+  checkers.ts              Deterministic outcome predicates over the trace
+  metrics.ts               CR / DR / FIR / TTC / GR / TCR + Wilson intervals
+  replay.ts                Re-score recorded traces offline, no model calls
+  report.ts                The markdown report
+benchmark-results/         Committed runs, replayable without a key
+  2026-08-31-slice/        12 live runs + raw traces + scored report
 scripts/
+  demo-live.sh              Guided live demo: checks setup, starts the stack
+  run-benchmark.sh          Live benchmark + scoring, states the bill first
+  verify-guards.sh          Free: test suites + re-derive the results
   start-local-poc.sh        npm run poc
   setup-demo-scenario.sh    Plant the deploy-checklist injection scenario
   setup-rotation-scenario.sh  Prove the learned host family in isolation
@@ -871,7 +937,7 @@ scripts/
   bootstrap-local.sh / deploy-existing-ecs.sh / deploy-volcengine.sh
 docs/
   ARCHITECTURE.md  LEARNING_LAYER.md  LOCAL_POC.md  DEPLOYMENT.md
-  HACKATHON_EXTENSION_GUIDE.md
+  BENCHMARK.md  HACKATHON_EXTENSION_GUIDE.md
 Dockerfile / Dockerfile.runtime / docker-compose.yml
 ```
 
