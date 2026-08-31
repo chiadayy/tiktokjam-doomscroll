@@ -19,3 +19,16 @@ apps/server/reference/
 
 # Local inspection helper, not part of the deliverable
 scripts/show-last-run.sh
+
+# Generated chart PNGs are for the Devpost writeup; SVGs are the source
+# Orphan probe traces, not referenced by any test
+apps/server/tests/fixtures/
+
+# Generated benchmark runs; the named slice is the committed one
+benchmark-results/*T*Z/
+
+# Chart variants used only in the Devpost writeup, not in the repo docs
+docs/assets/png/
+docs/assets/benchmark-safety-vs-cost-*.svg
+docs/assets/benchmark-utility-*.svg
+docs/assets/benchmark-who-stopped-it-*.svg
