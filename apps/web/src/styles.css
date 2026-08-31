@@ -2104,3 +2104,250 @@ textarea:focus {
   .activity-collapsed strong { width: 100%; margin-left: 0; }
   .activity-intervention-summary { flex-direction: column; }
 }
+
+/* ---------------------------------------------------------------------------
+   Workspace panel
+   ---------------------------------------------------------------------------
+   Sits in the same slot as the safety panel, so it inherits that column's
+   width rules. Two rows: a fixed head, then a list-and-viewer split that owns
+   its own scrolling — the page itself must never scroll sideways because a
+   file had a long line. */
+
+.workspace-panel {
+  width: min(460px, 44%);
+  min-width: 320px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--paper);
+  border-left: 1px solid var(--line);
+}
+
+.workspace-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.workspace-head h2 {
+  font-size: 15px;
+  margin: 2px 0 0;
+}
+
+.workspace-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-head-actions > button:last-child {
+  border: 0;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.workspace-error {
+  margin: 0;
+  padding: 10px 16px;
+  background: #fdf0f0;
+  color: var(--red);
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+}
+
+.workspace-body {
+  display: grid;
+  grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
+  min-height: 0;
+}
+
+/* --- the file list --- */
+
+.workspace-tree {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--line);
+}
+
+.workspace-empty {
+  padding: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.workspace-file {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.workspace-file:hover {
+  background: var(--purple-soft);
+}
+
+.workspace-file.is-open {
+  background: var(--purple-soft);
+  box-shadow: inset 2px 0 0 var(--purple);
+}
+
+.workspace-file-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-file-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.workspace-size {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-badge {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.workspace-badge-sensitive {
+  background: #fdf0f0;
+  color: var(--red);
+}
+
+.workspace-badge-watched {
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+}
+
+/* --- the viewer and the editor --- */
+
+.workspace-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+}
+
+.workspace-view-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.workspace-view-head code {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-content {
+  margin: 0;
+  padding: 12px;
+  background: #fcfbf7;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.workspace-placeholder,
+.workspace-note {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin: 10px 0 0;
+}
+
+.workspace-saved {
+  margin: 0 0 10px;
+  color: var(--green);
+  font-size: 12.5px;
+}
+
+.workspace-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workspace-path-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.workspace-path-field input,
+.workspace-textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  width: 100%;
+}
+
+.workspace-textarea {
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 220px;
+}
+
+.workspace-path-field input:focus-visible,
+.workspace-textarea:focus-visible,
+.workspace-file:focus-visible {
+  outline: 2px solid var(--purple);
+  outline-offset: 1px;
+}
+
+.workspace-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .workspace-panel {
+    width: 100%;
+    min-width: 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}

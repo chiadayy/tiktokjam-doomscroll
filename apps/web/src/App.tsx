@@ -4,6 +4,7 @@ import { MessageContent } from "./MessageContent";
 import type { AdminOverview, Agent, AgentRun, Message, SystemInfo } from "./types";
 import { ReflectionList } from "./Reflections";
 import { Trajectory } from "./Trajectory";
+import { Workspace } from "./Workspace";
 import { Admin, AgentSafetyDetails } from "./Admin";
 import { parseTrace, toSteps, type TraceRecord, type TraceStep } from "./trace";
 
@@ -68,6 +69,7 @@ export default function App() {
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
   const [adminAgentId, setAdminAgentId] = useState<string | null>(null);
   const [showSafetyPanel, setShowSafetyPanel] = useState(false);
+  const [showWorkspace, setShowWorkspace] = useState(false);
   const messageEnd = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
@@ -622,7 +624,12 @@ export default function App() {
               </form>
             )}
 
-            <section className={"playground " + (showSafetyPanel ? "playground-with-safety" : "")}>
+            <section
+              className={
+                "playground " +
+                (showSafetyPanel || showWorkspace ? "playground-with-safety" : "")
+              }
+            >
               <div className="chat-column">
               <div className="playground-topbar">
                 <div>
@@ -634,6 +641,12 @@ export default function App() {
                     <span className="pulse" />
                     {selected.codexThreadId ? "Session connected" : "New session"}
                   </div>
+                  <button
+                    className="safety-toggle"
+                    onClick={() => setShowWorkspace((value) => !value)}
+                  >
+                    Workspace
+                  </button>
                   <button className="safety-toggle" onClick={openSafetyPanel}>
                     Safety
                   </button>
@@ -734,6 +747,13 @@ export default function App() {
                 </div>
               </form>
               </div>
+              {showWorkspace && (
+                <Workspace
+                  agentId={selected.id}
+                  reflections={selected.reflections ?? []}
+                  onClose={() => setShowWorkspace(false)}
+                />
+              )}
               {showSafetyPanel && (
                 <aside className="chat-safety-panel" aria-label={`${selected.name} safety`}>
                   <header className="chat-safety-header">

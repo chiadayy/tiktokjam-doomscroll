@@ -1,4 +1,12 @@
-import type { AdminOverview, Agent, AgentRun, Message, SystemInfo } from "./types";
+import type {
+  AdminOverview,
+  Agent,
+  AgentRun,
+  Message,
+  SystemInfo,
+  WorkspaceEntry,
+  WorkspaceFile,
+} from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -78,6 +86,17 @@ export const api = {
         body: JSON.stringify({ content }),
       },
     ),
+  workspace: (id: string) =>
+    request<{ files: WorkspaceEntry[] }>("/api/agents/" + id + "/workspace"),
+  workspaceFile: (id: string, path: string) =>
+    request<{ file: WorkspaceFile }>(
+      "/api/agents/" + id + "/workspace/file?path=" + encodeURIComponent(path),
+    ),
+  saveWorkspaceFile: (id: string, path: string, content: string) =>
+    request<{ file: WorkspaceEntry }>("/api/agents/" + id + "/workspace/file", {
+      method: "PUT",
+      body: JSON.stringify({ path, content }),
+    }),
   run: (id: string) => request<{ run: AgentRun }>("/api/runs/" + id),
   resolveApproval: (runId: string, approvalId: string, decision: "approve" | "deny") =>
     request<{ run: AgentRun }>("/api/runs/" + runId + "/approval", {

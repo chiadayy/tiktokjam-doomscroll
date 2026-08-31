@@ -163,3 +163,18 @@ export interface AdminOverview {
     effect: string;
   }>;
 }
+
+/** One file in an Agent's workspace, as listed by the API. */
+export interface WorkspaceEntry {
+  path: string;
+  size: number;
+  modifiedAt: string;
+}
+
+/** One file's contents. `content` is a prefix when `truncated` is true. */
+export interface WorkspaceFile {
+  path: string;
+  content: string;
+  size: number;
+  truncated: boolean;
+}
