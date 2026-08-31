@@ -78,6 +78,11 @@ export const api = {
       },
     ),
   run: (id: string) => request<{ run: AgentRun }>("/api/runs/" + id),
+  resolveApproval: (runId: string, approvalId: string, decision: "approve" | "deny") =>
+    request<{ run: AgentRun }>("/api/runs/" + runId + "/approval", {
+      method: "POST",
+      body: JSON.stringify({ approvalId, decision }),
+    }),
   // The trace is JSON Lines, not JSON, so it bypasses the shared request
   // helper. Returns null while a run has not written anything yet.
   //

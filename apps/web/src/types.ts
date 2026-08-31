@@ -1,5 +1,28 @@
 export type AgentStatus = "ready" | "busy" | "stopped" | "error";
-export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type HumanApprovalReason =
+  | "high_consequence"
+  | "semantic_uncertainty"
+  | "semantic_unavailable";
+
+export interface HumanApprovalRequest {
+  id: string;
+  runId: string;
+  reason: HumanApprovalReason;
+  actionType: "command" | "file_change";
+  actionId: string;
+  summary: string;
+  safeDetails?: string;
+  createdAt: string;
+  expiresAt: string;
+}
 
 export interface Agent {
   id: string;
@@ -73,6 +96,7 @@ export interface AgentRun {
   findings?: Finding[];
   /** True when a guard refused an action or ended the run. */
   intervened?: boolean;
+  pendingApproval?: HumanApprovalRequest | null;
   createdAt: string;
 }
 

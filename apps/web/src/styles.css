@@ -1737,6 +1737,98 @@ textarea:focus {
 .activity-blocked .step-icon { color: var(--red); }
 .activity-running .step-icon { color: var(--purple); }
 
+.approval-card {
+  margin: 10px 16px 16px;
+  padding: 18px;
+  border: 1px solid rgba(184, 117, 12, 0.34);
+  border-radius: 12px;
+  background: #fffaf0;
+  color: var(--ink);
+}
+
+.approval-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.approval-heading h3 {
+  margin: 2px 0 0;
+  font-size: 1rem;
+}
+
+.approval-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: #f4dfb5;
+  color: #77520f;
+  font-weight: 800;
+}
+
+.approval-copy {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.approval-copy div {
+  display: grid;
+  gap: 3px;
+}
+
+.approval-copy dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.approval-copy dd {
+  margin: 0;
+  max-width: 70ch;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.approval-copy div:first-child dd {
+  font-weight: 700;
+}
+
+.approval-details {
+  margin-bottom: 16px;
+}
+
+.approval-details summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.approval-details pre {
+  max-height: 180px;
+  margin: 8px 0 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+}
+
+.approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .activity-row-details { margin-top: 4px; }
 .activity-row-details summary {
   color: var(--muted);

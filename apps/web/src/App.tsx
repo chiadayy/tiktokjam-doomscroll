@@ -12,6 +12,12 @@ const starterPrompts = [
   "Build a responsive single-page todo app with tests.",
 ];
 
+const ACTIVE_RUN_STATUSES: AgentRun["status"][] = ["queued", "running", "waiting_approval"];
+
+function isActiveRun(run: AgentRun | null): boolean {
+  return run !== null && ACTIVE_RUN_STATUSES.includes(run.status);
+}
+
 const emptyForm = {
   name: "",
   description: "",
@@ -56,6 +62,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
   const [authInput, setAuthInput] = useState("");
+  const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null);
   const messageEnd = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
@@ -66,7 +73,7 @@ export default function App() {
     () => agents.find((agent) => agent.id === selectedId) ?? null,
     [agents, selectedId],
   );
-  const liveRun = activeRun !== null && ["queued", "running"].includes(activeRun.status);
+  const liveRun = isActiveRun(activeRun);
   const safetyMemoryUpdated =
     activeRun !== null &&
     (selected?.reflections ?? []).some((reflection) => reflection.sightings.includes(activeRun.id));
@@ -82,6 +89,9 @@ export default function App() {
           status={activeRun.status}
           findings={activeRun.findings ?? []}
           redactions={traceRedactions}
+          pendingApproval={activeRun.pendingApproval ?? null}
+          approvalBusy={resolvingApprovalId === activeRun.pendingApproval?.id}
+          onApprovalDecision={(decision) => void resolveApproval(decision)}
         />
         {safetyMemoryUpdated && (
           <div className="safety-memory-updated">🧠 Safety memory updated</div>
@@ -139,7 +149,7 @@ export default function App() {
         if (selectedIdRef.current !== selectedId) return;
         const latest = result.runs[0] ?? null;
         setActiveRun(latest);
-        if (latest && ["queued", "running"].includes(latest.status)) {
+        if (isActiveRun(latest)) {
           void pollRun(latest.id, selectedId).catch((reason) =>
             setError(reason instanceof Error ? reason.message : String(reason)),
           );
@@ -244,6 +254,25 @@ export default function App() {
     setTraceRedactions(trace.redactions);
   };
 
+  const resolveApproval = async (decision: "approve" | "deny") => {
+    const approval = activeRun?.pendingApproval;
+    if (activeRun === null || approval === null || approval === undefined) return;
+    setResolvingApprovalId(approval.id);
+    setError(null);
+    try {
+      const result = await api.resolveApproval(activeRun.id, approval.id, decision);
+      if (selectedIdRef.current === activeRun.agentId) setActiveRun(result.run);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      const latest = await api.run(activeRun.id).catch(() => null);
+      if (latest !== null && selectedIdRef.current === activeRun.agentId) {
+        setActiveRun(latest.run);
+      }
+    } finally {
+      setResolvingApprovalId(null);
+    }
+  };
+
   const pollRun = async (runId: string, agentId: string) => {
     if (pollingRunIds.current.has(runId)) return;
     pollingRunIds.current.add(runId);
@@ -254,7 +283,7 @@ export default function App() {
         const result = await api.run(runId);
         if (selectedIdRef.current === agentId) setActiveRun(result.run);
         await refreshTrace(runId, agentId);
-        if (!["queued", "running"].includes(result.run.status)) {
+        if (!isActiveRun(result.run)) {
           await Promise.all([refreshMessages(agentId), refreshAgents()]);
           return;
         }
@@ -607,7 +636,7 @@ export default function App() {
                   disabled={
                     selected.status === "stopped" ||
                     selected.status === "busy" ||
-                    activeRun != null && ["queued", "running"].includes(activeRun.status)
+                    isActiveRun(activeRun)
                   }
                   rows={3}
                 />
@@ -621,7 +650,7 @@ export default function App() {
                       !prompt.trim() ||
                       selected.status === "stopped" ||
                       selected.status === "busy" ||
-                      (activeRun != null && ["queued", "running"].includes(activeRun.status))
+                      isActiveRun(activeRun)
                     }
                     aria-label="Send message"
                   >

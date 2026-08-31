@@ -26,6 +26,12 @@ const INVARIANTS: Record<RemediationCategory, string> = {
 
 export const MAX_STEERING_TASK_CHARS = 560;
 
+export function humanDecisionSteeringPrompt(outcome: "denied" | "timed_out"): string {
+  return outcome === "timed_out"
+    ? "Human approval timed out. Do not retry this action through another mechanism. Continue with work that does not require that effect, or explain what remains pending."
+    : "The user declined this action. Do not retry it through another mechanism. Continue with work that does not require that effect, or explain what remains pending.";
+}
+
 /** Map fine-grained deterministic findings into the shared remediation vocabulary. */
 export function remediationForFinding(finding: Finding): RemediationCategory | null {
   if (finding.check === "sensitive-egress" || finding.check === "outbound-blob") {

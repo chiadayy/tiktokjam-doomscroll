@@ -52,4 +52,23 @@ describe("turn security policy", () => {
       effectGating: true,
     });
   });
+
+  it("uses the effect gate for HITL while leaving semantic enforcement off", () => {
+    const config = loadConfig({
+      NODE_ENV: "test",
+      HITL_ENABLED: "true",
+      HITL_TIMEOUT_MS: "120000",
+    });
+    const policy = resolveTurnSecurityPolicy(config);
+
+    expect(config.hitlEnabled).toBe(true);
+    expect(config.hitlTimeoutMs).toBe(120_000);
+    expect(policy).toEqual({
+      sandboxMode: "read-only",
+      denyNetwork: true,
+      approvalPolicy: "on-request",
+      semanticEnforcement: false,
+      effectGating: true,
+    });
+  });
 });
