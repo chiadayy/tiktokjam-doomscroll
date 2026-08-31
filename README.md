@@ -6,7 +6,8 @@
 ## Architecture Diagram
 <img width="1280" height="889" alt="architecture_diagram" src="https://github.com/user-attachments/assets/625e2753-09f4-4e59-b7c2-72d39c82e13e" />
 
-**TikTok Hackathon — Track 1, Kill Switch (safety & sandboxing).**
+## Motivation and Problem Statement
+**Track Chosen: Agent Launchpad: Design and Build Lightweight Agent Middleware.**
 
 An autonomous coding Agent can go off the rails **on its own**. No attacker is
 required: a bug in its reasoning loop, a bad inference, a malicious line in a
