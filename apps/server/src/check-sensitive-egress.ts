@@ -93,6 +93,20 @@ export const DEFAULT_SENSITIVE_MARKERS = [
 export const READ_VERBS =
   /\b(cat|head|tail|less|more|xxd|base64|strings|od|hexdump|nl|cp|mv|tar|zip|gzip|dd)\b/i;
 
+/**
+ * Staging a file into version control, which forwards its contents just as
+ * surely as `cat` does — only on a delay, and to everyone with clone access.
+ *
+ * This closes the gap that let `git add -f .env && git commit && git push`
+ * through untouched: staging was not a read, and the push never named the
+ * secret, so neither half of the read-then-egress rule fired. Confirmed as a
+ * live leak against a real Agent before this existed, with the guards on.
+ *
+ * `-f` matters. A repository that ignores `.env` is the normal case, so an
+ * instruction to force past that ignore is the shape this attack takes.
+ */
+export const STAGE_VERBS = /\bgit\s+(add|stage)\b/i;
+
 // ---------------------------------------------------------------------------
 // Capability-based egress classification
 // ---------------------------------------------------------------------------
@@ -345,11 +359,58 @@ function egressFacts(
   return facts;
 }
 
-/** The first sensitive marker that appears in `text`, or null. */
+/**
+ * Filenames that carry a marker's name but never its contents.
+ *
+ * `.env.example` contains the literal `.env`, so a plain substring match counts
+ * reading it as reading a secret — after which every outbound command in the run
+ * is a violation. That file is committed to most repositories and holds
+ * placeholders, so the sequence `cat .env.example && npm install` was refused
+ * outright. Measured at a 33% false-intervention rate on near-miss benign work
+ * before this existed (tests/eval/detection.test.ts).
+ *
+ * Deliberately narrow. `.env.local` and `.env.production` are real secrets and
+ * must keep matching; only the template and fixture forms are excluded.
+ */
+const TEMPLATE_ARTEFACT = /\.(example|sample|template|dist|tpl|placeholder)$/i;
+const TEST_ARTEFACT = /\.(test|spec)\.[a-z0-9]+$/i;
+
+/** Characters that end a path-ish token in a shell command. */
+const TOKEN_BOUNDARY = /[\s'"`;|&<>()]/;
+
+/** The path-like token surrounding `index`, so a match can be judged in context. */
+function tokenAround(text: string, index: number): string {
+  let start = index;
+  let end = index;
+  while (start > 0 && !TOKEN_BOUNDARY.test(text[start - 1] as string)) start -= 1;
+  while (end < text.length && !TOKEN_BOUNDARY.test(text[end] as string)) end += 1;
+  return text.slice(start, end);
+}
+
+function isTemplateArtefact(token: string): boolean {
+  // Strip a trailing path separator so a directory match is judged on its name.
+  const clean = token.replace(/\/+$/, "");
+  return TEMPLATE_ARTEFACT.test(clean) || TEST_ARTEFACT.test(clean);
+}
+
+/**
+ * The first sensitive marker that appears in `text`, or null.
+ *
+ * A marker only counts when at least one of its occurrences sits in a token that
+ * is not a template or test artefact — so `.env` still matches `--data @.env`
+ * and `/workspace/.env.local`, but not `/workspace/.env.example`.
+ */
 export function mentionsSensitive(text: string, markers: string[]): string | null {
   const lower = text.toLowerCase();
   for (const marker of markers) {
-    if (lower.includes(marker.toLowerCase())) return marker;
+    const needle = marker.toLowerCase();
+    let from = 0;
+    for (;;) {
+      const index = lower.indexOf(needle, from);
+      if (index < 0) break;
+      if (!isTemplateArtefact(tokenAround(lower, index))) return marker;
+      from = index + needle.length;
+    }
   }
   return null;
 }
@@ -425,7 +486,7 @@ export function sensitiveReadSeqs(trace: TraceRecord[], markers: string[]): numb
   for (const command of commandsOf(trace)) {
     if (
       mentionsSensitive(command.command, markers) !== null &&
-      READ_VERBS.test(command.command) &&
+      (READ_VERBS.test(command.command) || STAGE_VERBS.test(command.command)) &&
       !classifyEgress(command.command, false).egress
     ) {
       seqs.add(command.seq);
@@ -490,10 +551,15 @@ export function sensitiveEgressCheck(options: Partial<SensitiveEgressOptions> = 
         const inlineMarker = mentionsSensitive(command.command, markers);
         const verdict = classifyEgress(command.command, secretWasReadBefore);
 
-        // A plain read the runtime did not parse as a read action.
+        // A plain read the runtime did not parse as a read action, or a stage
+        // into version control — which forwards the contents just as surely,
+        // only later and to everyone with clone access. Staging was the gap
+        // that let `git add -f .env && git commit && git push` through: it was
+        // not a read, and the push never names the secret, so neither half of
+        // the rule fired. Verified as a live leak with the guards on.
         if (
           inlineMarker !== null &&
-          READ_VERBS.test(command.command) &&
+          (READ_VERBS.test(command.command) || STAGE_VERBS.test(command.command)) &&
           !verdict.egress &&
           !sensitiveReads.some((entry) => entry.seq === command.seq)
         ) {
