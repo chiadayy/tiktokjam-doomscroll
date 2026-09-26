@@ -1,6 +1,27 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { loadEnvFile } from "node:process";
 import { z } from "zod";
+
+// Load the repository-level .env for local npm start/dev commands. Existing
+// process environment variables keep precedence, so CI and deployments can
+// still inject configuration explicitly.
+const repositoryEnvFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../.env");
+if (existsSync(repositoryEnvFile)) {
+  loadEnvFile(repositoryEnvFile);
+}
+const repositoryRoot = path.dirname(repositoryEnvFile);
+
+function resolveConfiguredPath(value: string) {
+  // The sample/container .env uses /app/* paths. Map those to the repository
+  // on Windows so the same file also works with local-process development.
+  if (process.platform === "win32" && value.startsWith("/app/")) {
+    return path.resolve(repositoryRoot, value.slice("/app/".length));
+  }
+  return path.resolve(value);
+}
 
 const envSchema = z.object({
   HOST: z.string().default("0.0.0.0"),
@@ -164,10 +185,15 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     host: env.HOST,
     port: env.PORT,
     logLevel: env.LOG_LEVEL,
-    dataDirectory: path.resolve(env.APP_DATA_DIR),
-    workspaceRoot: path.resolve(env.AGENT_WORKSPACE_ROOT),
-    codexHome: path.resolve(env.CODEX_HOME),
-    codexBin: env.CODEX_BIN,
+    dataDirectory: resolveConfiguredPath(env.APP_DATA_DIR),
+    workspaceRoot: resolveConfiguredPath(env.AGENT_WORKSPACE_ROOT),
+    codexHome: resolveConfiguredPath(env.CODEX_HOME),
+    // Node's spawn() cannot execute the PowerShell shim that npm exposes as
+    // `codex` on Windows; use the sibling .cmd launcher instead.
+    codexBin:
+      process.platform === "win32" && env.CODEX_BIN === "codex"
+        ? "codex.cmd"
+        : env.CODEX_BIN,
     codexSandboxMode: env.CODEX_SANDBOX_MODE,
     codexTimeoutMs: env.CODEX_TIMEOUT_MS,
     codexMaxOutputBytes: env.CODEX_MAX_OUTPUT_BYTES,
